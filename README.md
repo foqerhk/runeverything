@@ -53,7 +53,20 @@ runeverything pair
 brew services start runeverything
 ```
 
-### Linux
+### Linux（Debian / Ubuntu — apt）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-apt.sh | sudo bash
+```
+
+添加 APT 源后也可：
+
+```bash
+sudo apt update
+sudo apt install runeverything
+```
+
+### Linux（通用脚本）
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.sh | sh
