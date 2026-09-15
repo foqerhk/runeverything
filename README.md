@@ -45,28 +45,34 @@ go build -o bin/retest ./cmd/retest
 
 ## 一行安装（发布后）
 
-### macOS（Homebrew，推荐）
+### macOS（Homebrew）
 
 ```bash
 brew install foqerhk/tap/runeverything
 runeverything pair
-# 可选：开机常驻
 brew services start runeverything
 ```
 
-### Linux / macOS（脚本）
+### Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.sh | sh
 ```
 
-### Windows（PowerShell）
+### Windows（Scoop）
+
+```powershell
+scoop bucket add runeverything https://github.com/foqerhk/scoop-runeverything
+scoop install runeverything
+```
+
+### Windows（脚本）
 
 ```powershell
 irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
 ```
 
-上架流程（打 Release、同步 Formula、推送 Tap）见 [docs/distribution.md](docs/distribution.md)。
+各渠道发版与校验和同步见 [docs/distribution.md](docs/distribution.md)。
 ## 命令
 
 | 命令 | 说明 |
