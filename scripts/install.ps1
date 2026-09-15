@@ -27,16 +27,27 @@ if (Test-Path $LocalBin) {
     Pop-Location
   }
 } else {
-  $Arch = if ([Environment]::Is64BitOperatingSystem) {
-    if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
-  } else { "amd64" }
+  $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
   if ($Version -eq "latest") {
-    $Url = "https://github.com/$Repo/releases/latest/download/runeverything_windows_$Arch.exe"
+    $Base = "https://github.com/$Repo/releases/latest/download"
   } else {
-    $Url = "https://github.com/$Repo/releases/download/$Version/runeverything_windows_$Arch.exe"
+    $Ver = $Version
+    if (-not $Ver.StartsWith("v")) { $Ver = "v$Ver" }
+    $Base = "https://github.com/$Repo/releases/download/$Ver"
   }
-  Write-Host "==> Downloading $Url"
-  Invoke-WebRequest -Uri $Url -OutFile $Target
+  $ZipName = "runeverything_windows_$Arch.zip"
+  $ZipUrl = "$Base/$ZipName"
+  $Tmp = Join-Path $env:TEMP $ZipName
+  Write-Host "==> Downloading $ZipUrl"
+  try {
+    Invoke-WebRequest -Uri $ZipUrl -OutFile $Tmp
+    Expand-Archive -Path $Tmp -DestinationPath $InstallDir -Force
+    Remove-Item $Tmp -Force
+  } catch {
+    $RawUrl = "$Base/runeverything_windows_$Arch.exe"
+    Write-Host "==> zip missing, trying $RawUrl"
+    Invoke-WebRequest -Uri $RawUrl -OutFile $Target
+  }
 }
 
 $HomeDir = Join-Path $env:USERPROFILE ".runeverything"
