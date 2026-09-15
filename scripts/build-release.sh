@@ -44,6 +44,16 @@ build_one linux arm64
 build_one windows amd64
 build_one windows arm64
 
+echo "==> building .deb packages"
+chmod +x "${ROOT}/scripts/build-deb.sh"
+"${ROOT}/scripts/build-deb.sh" "$VERSION"
+
+if [[ "${RE_SKIP_APT_REPO:-}" != "1" ]]; then
+  echo "==> building APT repo tree"
+  chmod +x "${ROOT}/scripts/build-apt-repo.sh"
+  "${ROOT}/scripts/build-apt-repo.sh" "$VERSION" || echo "warning: apt repo build failed (non-fatal)"
+fi
+
 echo "==> checksums"
 (
   cd "$OUT"
@@ -61,4 +71,5 @@ echo
 echo "Next:"
 echo "  1. Create git tag v${VERSION} and push"
 echo "  2. Upload ${OUT}/* to GitHub Release v${VERSION}"
-echo "  3. Run: scripts/sync-homebrew-formula.sh ${VERSION}"
+echo "  3. Run sync scripts + publish APT Pages if needed"
+echo "  4. Debian/Ubuntu: curl -fsSL .../scripts/install-apt.sh | sudo bash"

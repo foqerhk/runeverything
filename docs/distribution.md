@@ -7,7 +7,8 @@
 | 平台 | 推荐安装方式 | 备选 |
 |------|----------------|------|
 | macOS | `brew install foqerhk/tap/runeverything` | `curl …/install.sh \| sh` |
-| Linux | `curl …/install.sh \| sh` | Homebrew on Linux；Arch 可用 AUR `PKGBUILD` |
+| Linux (Debian/Ubuntu) | `curl …/install-apt.sh \| sudo bash` 或 `apt install runeverything` | 通用 `install.sh` |
+| Linux (其他) | `curl …/install.sh \| sh` | Arch：`packaging/aur/PKGBUILD` |
 | Windows | Scoop / `install.ps1` | winget（manifest 待合入官方仓库） |
 
 ## macOS — Homebrew
@@ -20,13 +21,33 @@ brew services start runeverything
 
 仓库：`foqerhk/runeverything`（主项目）+ `foqerhk/homebrew-tap`。
 
-## Linux — 安装脚本（通用）
+## Linux — Debian / Ubuntu（apt）
+
+一键安装（下载 `.deb` 并用 apt 安装）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-apt.sh | sudo bash
+```
+
+添加本项目 APT 源（GitHub Pages）：
+
+```bash
+echo 'deb [trusted=yes] https://foqerhk.github.io/runeverything/apt stable main' \
+  | sudo tee /etc/apt/sources.list.d/runeverything.list
+sudo apt update
+sudo apt install runeverything
+```
+
+包内含二进制与 user systemd unit：`systemctl --user enable --now runeverything`。
+
+发版时由 `scripts/build-deb.sh` + `scripts/build-apt-repo.sh` 生成
+`runeverything_<ver>_amd64.deb` / `arm64.deb` 与 `dist/apt/` 仓库树。
+
+## Linux — 通用安装脚本
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.sh | sh
 ```
-
-会下载对应 `linux_amd64` / `linux_arm64` 包，并尽量注册 systemd user 服务。
 
 Linux 上若已装 Homebrew：
 
