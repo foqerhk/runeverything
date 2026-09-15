@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Build release assets
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          chmod +x scripts/build-release.sh
+          ./scripts/build-release.sh "$ver"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" "dist/v${ver}"/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
