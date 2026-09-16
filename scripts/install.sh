@@ -100,6 +100,8 @@ install_launchd() {
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>RE_RELAY</key>
@@ -114,7 +116,10 @@ install_launchd() {
 EOF
   launchctl unload "$plist" 2>/dev/null || true
   launchctl load "$plist"
+  # Prefer staying awake on AC; agent also runs caffeinate itself.
+  pmset -g custom 2>/dev/null | head -1 >/dev/null || true
   info "Installed launchd agent: $plist"
+  info "Tip: keep Mac plugged in; agent prevents idle sleep while running."
 }
 
 install_systemd_user() {
@@ -124,19 +129,26 @@ install_systemd_user() {
 [Unit]
 Description=RunEverything Agent
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 ExecStart=${TARGET} run -no-qr
 Restart=always
 RestartSec=3
 Environment=RE_RELAY=${RELAY_URL}
+# Agent calls systemd-inhibit itself; also restart on failure / network blips.
 
 [Install]
 WantedBy=default.target
 EOF
   systemctl --user daemon-reload
   systemctl --user enable --now runeverything.service
+  # Survive logout / GUI lock: allow user services without interactive session.
+  if command -v loginctl >/dev/null 2>&1; then
+    loginctl enable-linger "$(id -un)" 2>/dev/null || info "enable-linger failed (need permission); agent may stop on logout"
+  fi
   info "Installed systemd user service runeverything.service"
+  info "Tip: keep the machine awake; agent inhibits idle sleep while running."
 }
 
 case "$os" in

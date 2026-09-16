@@ -204,6 +204,8 @@ def write_changes(
     body.write(f"Urgency: medium\n")
     body.write(f"Maintainer: {MAINTAINER}\n")
     body.write(f"Changed-By: {MAINTAINER}\n")
+    body.write("Description:\n")
+    body.write(f" {SOURCE} - Open-source remote agent for Intent Computing\n")
     body.write(f"Changes:\n")
     body.write(f" {SOURCE} ({debian_ver}) {series}; urgency=medium\n")
     body.write(f" .\n")
@@ -215,11 +217,10 @@ def write_changes(
     for f in files:
         body.write(f" {sha256(f)} {f.stat().st_size} {f.name}\n")
     body.write(f"Files:\n")
+    # Launchpad rejects section "-" ("Unknown section '-'").
+    # Use the package Section/Priority from debian/control for every file.
     for f in files:
-        # section priority — source packages use extras optional / -
-        section = "misc" if f.suffix == ".dsc" else "-"
-        priority = "extra" if f.suffix == ".dsc" else "-"
-        body.write(f" {md5(f)} {f.stat().st_size} {section} {priority} {f.name}\n")
+        body.write(f" {md5(f)} {f.stat().st_size} utils optional {f.name}\n")
     changes.write_text(body.getvalue())
     return changes
 
@@ -389,6 +390,16 @@ def main() -> int:
     )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", default="", help="output directory")
+    ap.add_argument(
+        "--reuse-orig",
+        action="store_true",
+        help="reuse existing dist/.../NAME_VERSION.orig.tar.gz (required after first Launchpad upload of that upstream version)",
+    )
+    ap.add_argument(
+        "--orig",
+        default="",
+        help="path to an existing .orig.tar.gz to reuse",
+    )
     args = ap.parse_args()
     series_list = args.series or ["noble", "jammy"]
     upstream = args.version
@@ -399,9 +410,23 @@ def main() -> int:
         print(f"missing {GPG_DIR}/private.asc", file=sys.stderr)
         return 1
 
-    print(f"==> orig tarball from {ROOT}")
-    orig = make_orig_tarball(out, upstream)
-    print(f"==> wrote {orig}")
+    orig_name = f"{SOURCE}_{upstream}.orig.tar.gz"
+    if args.orig:
+        src = Path(args.orig).expanduser().resolve()
+        if not src.is_file():
+            print(f"missing --orig {src}", file=sys.stderr)
+            return 1
+        orig = out / orig_name
+        if src.resolve() != orig.resolve():
+            shutil.copy2(src, orig)
+        print(f"==> reusing orig {orig} ({orig.stat().st_size} bytes)")
+    elif args.reuse_orig and (out / orig_name).is_file():
+        orig = out / orig_name
+        print(f"==> reusing orig {orig} ({orig.stat().st_size} bytes)")
+    else:
+        print(f"==> orig tarball from {ROOT}")
+        orig = make_orig_tarball(out, upstream)
+        print(f"==> wrote {orig}")
 
     for series in series_list:
         build_for_series(out, upstream, series, orig, args.dry_run, args.revision)

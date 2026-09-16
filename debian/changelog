@@ -1,5 +1,5 @@
 runeverything (0.1.0-1) noble; urgency=medium
 
-  * Initial Launchpad PPA release for Ubuntu 24.04 (noble).
+  * Fix debhelper compat duplication and source options for Launchpad builds.
 
- -- foqerhk <ruier09@qq.com>  Wed, 16 Sep 2026 04:35:00 +0000
+ -- foqerhk <ruier09@qq.com>  Wed, 16 Sep 2026 08:10:00 +0000

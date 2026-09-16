@@ -7,7 +7,11 @@
 .idea/
 .vscode/
 *.log
+.cursor/
 
 .env
 .env.*
 !.env.example
+
+# Prebuilt PPA stage binaries (regenerate locally)
+/debian/binaries/

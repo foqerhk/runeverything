@@ -1,14 +1,2 @@
-# Ignore build artifacts / local tooling when making the orig tarball.
-.git
-.github
-.cursor
-.env
-dist
-bin
-debian/.go
-debian/.go-home
-debian/.gopath
-debian/.gocache
-*.deb
-*.rpm
-.DS_Store
+# Ignore VCS / local artifacts in Debian source diffs (orig tarball is built separately).
+extend-diff-ignore = (^|/)(\.git|\.github|\.cursor|dist|bin|\.env|\.DS_Store)$

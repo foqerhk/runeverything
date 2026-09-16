@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/creack/pty"
@@ -40,7 +41,16 @@ func whichTmux() string {
 	return path
 }
 
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // Start launches a PTY session.
+//
+// When useTmux is true:
+//   - If a named tmux session already exists → attach (reuse agent / shell).
+//   - Else create it; if cmdArgs is set, run that command inside the new session
+//     (KoKo / Intent Computing path: typically ["agent"]).
 func Start(id string, cwd string, cmdArgs []string, cols, rows int, useTmux bool, tmuxName string) (*Session, error) {
 	if cols <= 0 {
 		cols = 80
@@ -59,8 +69,30 @@ func Start(id string, cwd string, cmdArgs []string, cols, rows int, useTmux bool
 		if name == "" {
 			name = "re-" + id
 		}
-		// Attach or create named session.
-		cmd = exec.Command(tmux, "new-session", "-A", "-s", name)
+
+		inner := ""
+		if len(cmdArgs) > 0 {
+			parts := make([]string, 0, len(cmdArgs))
+			for _, a := range cmdArgs {
+				parts = append(parts, shellQuote(a))
+			}
+			// Ensure Cursor CLI is reachable in non-login shells.
+			inner = `export PATH="$HOME/.local/bin:$PATH"; exec ` + strings.Join(parts, " ")
+		}
+
+		var script string
+		if inner == "" {
+			script = fmt.Sprintf(
+				`if tmux has-session -t %s 2>/dev/null; then exec tmux attach -t %s; else exec tmux new-session -s %s; fi`,
+				shellQuote(name), shellQuote(name), shellQuote(name),
+			)
+		} else {
+			script = fmt.Sprintf(
+				`if tmux has-session -t %s 2>/dev/null; then exec tmux attach -t %s; else exec tmux new-session -s %s %s; fi`,
+				shellQuote(name), shellQuote(name), shellQuote(name), shellQuote(inner),
+			)
+		}
+		cmd = exec.Command("bash", "-lc", script)
 	} else {
 		args := cmdArgs
 		if len(args) == 0 {
@@ -71,7 +103,9 @@ func Start(id string, cwd string, cmdArgs []string, cols, rows int, useTmux bool
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	env = append(env, "PATH="+os.Getenv("HOME")+"/.local/bin:"+os.Getenv("PATH"))
+	cmd.Env = env
 
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
@@ -114,7 +148,6 @@ func (s *Session) Close() error {
 	}
 	if s.Cmd != nil && s.Cmd.Process != nil {
 		_ = s.Cmd.Process.Kill()
-		_, _ = s.Cmd.Process.Wait()
 	}
 	return nil
 }

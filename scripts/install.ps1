@@ -86,16 +86,24 @@ if ($env:Path -notlike "*$InstallDir*") {
   $env:Path = "$InstallDir;$env:Path"
 }
 
-# Autostart via scheduled task
+# Autostart via scheduled task (runs at logon; agent prevents sleep itself)
 $TaskName = "RunEverythingAgent"
 try {
   $Action = New-ScheduledTaskAction -Execute $Target -Argument "run -no-qr"
   $Trigger = New-ScheduledTaskTrigger -AtLogOn
-  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+  $Settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -DontStopOnIdleEnd `
+    -StartWhenAvailable `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-  Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "RunEverything Agent" | Out-Null
+  Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "RunEverything Agent (keep PC awake while running)" | Out-Null
   Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   Write-Host "==> Scheduled task: $TaskName (starts at logon)"
+  Write-Host "==> Tip: plug in AC power; agent requests system away-mode to reduce sleep."
 } catch {
   Write-Host "==> Scheduled task skipped: $_"
   Write-Host "    Start manually: runeverything"
@@ -104,9 +112,9 @@ try {
 Write-Host ""
 Write-Host "==> Installed: $Target"
 Write-Host "==> Next steps:"
-Write-Host "    1. Set relay:  `$env:RE_RELAY = 'wss://your-relay.example/ws'"
-Write-Host "    2. Pair:       runeverything pair"
-Write-Host "    3. Or run:     runeverything"
+Write-Host "    1. Pair:       runeverything pair"
+Write-Host "    2. Or run:     runeverything"
+Write-Host "    3. Keep PC online 24h: avoid Sleep; lock screen is OK (network stays)."
 Write-Host ""
 
 try {
