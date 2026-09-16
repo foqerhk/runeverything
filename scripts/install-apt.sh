@@ -3,16 +3,18 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-apt.sh | sudo bash
 #
-# This script:
-#   1) Adds our APT repository (so later you can: sudo apt install/upgrade runeverything)
-#   2) Runs apt update && apt install runeverything
-#   3) Falls back to downloading the .deb from GitHub Releases if the repo is unreachable
+# Order:
+#   1) Launchpad PPA (ppa:foqerhk/runeverything) when available
+#   2) GitHub Pages APT repo
+#   3) Direct .deb from GitHub Releases
 set -euo pipefail
 
 REPO="${RE_REPO:-foqerhk/runeverything}"
-VERSION="${RE_VERSION:-}"          # empty = install from APT repo "latest"; or e.g. 0.1.0
+VERSION="${RE_VERSION:-}"          # empty = install latest; or e.g. 0.1.0
+PPA="${RE_PPA:-ppa:foqerhk/runeverything}"
 APT_BASE="${RE_APT_BASE:-https://foqerhk.github.io/runeverything/apt}"
 LIST_FILE="/etc/apt/sources.list.d/runeverything.list"
+USE_PPA="${RE_USE_PPA:-1}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Please run with sudo, e.g.:" >&2
@@ -34,20 +36,32 @@ case "$arch" in
     ;;
 esac
 
-add_apt_repo() {
-  echo "==> Adding APT source: ${APT_BASE}"
-  # trusted=yes: unsigned GitHub Pages repo (fine for early OSS; swap for signed key later)
-  echo "deb [trusted=yes arch=amd64,arm64] ${APT_BASE} stable main" > "${LIST_FILE}"
-  chmod 0644 "${LIST_FILE}"
-}
-
-install_from_repo() {
+install_pkg() {
   apt-get update -qq
   if [[ -n "$VERSION" ]]; then
-    apt-get install -y "runeverything=${VERSION}"
+    apt-get install -y "runeverything=${VERSION}*"
   else
     apt-get install -y runeverything
   fi
+}
+
+try_ppa() {
+  [[ "$USE_PPA" == "1" ]] || return 1
+  echo "==> Trying Launchpad PPA: ${PPA}"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq software-properties-common ca-certificates >/dev/null
+  if ! add-apt-repository -y "$PPA"; then
+    echo "==> add-apt-repository failed" >&2
+    return 1
+  fi
+  install_pkg
+}
+
+add_pages_repo() {
+  echo "==> Adding GitHub Pages APT source: ${APT_BASE}"
+  echo "deb [trusted=yes arch=amd64,arm64] ${APT_BASE} stable main" > "${LIST_FILE}"
+  chmod 0644 "${LIST_FILE}"
 }
 
 install_from_deb() {
@@ -72,19 +86,17 @@ install_from_deb() {
   apt-get install -y "${tmpdir}/${deb}"
 }
 
-add_apt_repo
-
-echo "==> Installing runeverything via apt"
-if install_from_repo; then
-  echo "==> Installed from APT repository"
+if try_ppa; then
+  echo "==> Installed from Launchpad PPA"
+elif add_pages_repo && install_pkg; then
+  echo "==> Installed from GitHub Pages APT repository"
 else
-  echo "==> APT repo install failed; trying GitHub Release .deb"
+  echo "==> APT install failed; trying GitHub Release .deb"
   install_from_deb
 fi
 
 echo
 echo "Done. You can now use:"
-echo "  sudo apt install runeverything     # already installed"
-echo "  sudo apt upgrade runeverything     # later upgrades (source already added)"
+echo "  sudo apt upgrade runeverything"
 echo "  runeverything pair"
 echo "  systemctl --user enable --now runeverything   # optional"

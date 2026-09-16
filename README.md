@@ -48,20 +48,19 @@ curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/
 
 **Debian / Ubuntu（apt）**
 
-不需要你先手动加源。一条命令即可（脚本会自动写入 APT 源并执行 `apt install`）：
+推荐 Launchpad PPA：
+
+```bash
+sudo add-apt-repository ppa:foqerhk/runeverything
+sudo apt update
+sudo apt install runeverything
+```
+
+或一条命令（优先 PPA，失败则回退 GitHub Pages / Release .deb）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-apt.sh | sudo bash
 ```
-
-装好之后，以后可以直接：
-
-```bash
-sudo apt update
-sudo apt install runeverything    # 或 upgrade
-```
-
-说明：系统官方源里默认没有本软件，所以**第一次**不能只靠裸的 `sudo apt install runeverything`（会提示找不到包）。必须先跑上面的一键脚本（或自己加源）；一键脚本已经帮你加好源了。
 
 **Fedora / RHEL / CentOS / Rocky / Alma（dnf / yum）**
 

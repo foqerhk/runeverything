@@ -1,0 +1,52 @@
+name: Upload to Launchpad PPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Debian revision suffix (e.g. 4 -> 0.1.0-1~noble4)"
+        required: true
+        default: "4"
+      series:
+        description: "Space-separated Ubuntu series"
+        required: true
+        default: "noble jammy"
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gnupg dput python3 python3-pip xz-utils
+          pip3 install --user pgpy
+
+      - name: Import Launchpad GPG key
+        env:
+          PPA_GPG_PRIVATE: ${{ secrets.PPA_GPG_PRIVATE }}
+          PPA_GPG_PASSPHRASE: ${{ secrets.PPA_GPG_PASSPHRASE }}
+        run: |
+          test -n "$PPA_GPG_PRIVATE"
+          test -n "$PPA_GPG_PASSPHRASE"
+          mkdir -p "$HOME/.runeverything-gpg" "$HOME/.gnupg"
+          chmod 700 "$HOME/.gnupg" "$HOME/.runeverything-gpg"
+          printf '%s\n' "$PPA_GPG_PRIVATE" > "$HOME/.runeverything-gpg/private.asc"
+          printf '%s\n' "$PPA_GPG_PASSPHRASE" > "$HOME/.runeverything-gpg/passphrase.txt"
+          chmod 600 "$HOME/.runeverything-gpg/private.asc" "$HOME/.runeverything-gpg/passphrase.txt"
+          # Extract public for completeness
+          gpg --batch --import "$HOME/.runeverything-gpg/private.asc"
+          gpg --batch --armor --export AE58E1575FBB1F7F > "$HOME/.runeverything-gpg/public.asc"
+          gpg --list-secret-keys --keyid-format LONG
+
+      - name: Build, sign with GnuPG, upload
+        run: |
+          set -euo pipefail
+          SERIES=(${{ github.event.inputs.series }})
+          ARGS=(--revision "${{ github.event.inputs.revision }}")
+          for s in "${SERIES[@]}"; do
+            ARGS+=(--series "$s")
+          done
+          python3 scripts/upload-ppa.py "${ARGS[@]}"

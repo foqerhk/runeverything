@@ -8,7 +8,7 @@
 |------|----------------|------|
 | macOS | `brew install foqerhk/tap/runeverything` | `install.sh` |
 | Linux（自动识别） | `curl …/install-linux.sh \| bash` | 见下表 |
-| Debian / Ubuntu | `install-apt.sh` / `apt install` | |
+| Debian / Ubuntu | `ppa:foqerhk/runeverything` / `install-apt.sh` | GitHub Pages APT |
 | Fedora / RHEL / Rocky | `install-rpm.sh`（dnf/yum） | |
 | openSUSE | `install-rpm.sh`（zypper） | |
 | Arch / Manjaro | `install-arch.sh` / AUR PKGBUILD | |
@@ -33,24 +33,24 @@ curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/
 
 ### Debian / Ubuntu（apt）
 
-**推荐：一条命令搞定（自动加源 + 安装）**
+**推荐：Launchpad PPA**
+
+```bash
+sudo add-apt-repository ppa:foqerhk/runeverything
+sudo apt update
+sudo apt install runeverything
+```
+
+PPA：https://launchpad.net/~foqerhk/+archive/ubuntu/runeverything  
+上传新版本：`python3 scripts/upload-ppa.py`（需 `~/.runeverything-gpg`）
+
+**或一条命令**（优先 PPA，失败则回退 GitHub Pages / Release .deb）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-apt.sh | sudo bash
 ```
 
-之后即可直接：
-
-```bash
-sudo apt update
-sudo apt install runeverything
-sudo apt upgrade runeverything
-```
-
-> 官方源里没有本包，第一次不能只跑裸的 `apt install runeverything`。  
-> 一键脚本会写入 `/etc/apt/sources.list.d/runeverything.list`，之后就和装其它软件一样。
-
-若只要手动加源：
+备选：手动加 GitHub Pages 源
 
 ```bash
 echo 'deb [trusted=yes arch=amd64,arm64] https://foqerhk.github.io/runeverything/apt stable main' \

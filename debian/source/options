@@ -1,0 +1,14 @@
+# Ignore build artifacts / local tooling when making the orig tarball.
+.git
+.github
+.cursor
+.env
+dist
+bin
+debian/.go
+debian/.go-home
+debian/.gopath
+debian/.gocache
+*.deb
+*.rpm
+.DS_Store
