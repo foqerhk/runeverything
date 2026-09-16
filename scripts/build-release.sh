@@ -48,6 +48,10 @@ echo "==> building .deb packages"
 chmod +x "${ROOT}/scripts/build-deb.sh"
 "${ROOT}/scripts/build-deb.sh" "$VERSION"
 
+echo "==> building .rpm packages"
+chmod +x "${ROOT}/scripts/build-rpm.sh"
+"${ROOT}/scripts/build-rpm.sh" "$VERSION" || echo "warning: rpm build failed (install nfpm / try again)"
+
 if [[ "${RE_SKIP_APT_REPO:-}" != "1" ]]; then
   echo "==> building APT repo tree"
   chmod +x "${ROOT}/scripts/build-apt-repo.sh"
