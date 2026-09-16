@@ -8,35 +8,40 @@ INSTALL_PS1="${ROOT}/packaging/chocolatey/tools/chocolateyInstall.ps1"
 
 [[ -f "${OUT}/runeverything_windows_amd64.zip" ]] || { echo "missing dist; build-release first" >&2; exit 1; }
 
-sha_of() {
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{print $1}'
-  else
-    sha256sum "$1" | awk '{print $1}'
-  fi
-}
+python3 - "$NUSPEC" "$INSTALL_PS1" "$VERSION" "$OUT" <<'PY'
+import hashlib, pathlib, re, sys, zipfile, tempfile, shutil
 
-AMD=$(sha_of "${OUT}/runeverything_windows_amd64.zip")
-ARM=$(sha_of "${OUT}/runeverything_windows_arm64.zip")
+nuspec, install_ps1, version, out = map(pathlib.Path, sys.argv[1:5])
 
-perl -i -pe "s#<version>[^<]+</version>#<version>${VERSION}</version>#" "$NUSPEC"
-perl -i -pe "s/^\\\$version = '.*'/\$version = '${VERSION}'/" "$INSTALL_PS1"
-perl -i -pe "s/^\\\$checksumAmd = '.*'/\$checksumAmd = '${AMD}'/" "$INSTALL_PS1"
-perl -i -pe "s/^\\\$checksumArm = '.*'/\$checksumArm = '${ARM}'/" "$INSTALL_PS1"
+def sha256(p):
+    return hashlib.sha256(p.read_bytes()).hexdigest()
 
-PACK_DIR="$(mktemp -d)"
-mkdir -p "${PACK_DIR}/tools"
-cp "$NUSPEC" "${PACK_DIR}/runeverything.nuspec"
-cp "${ROOT}/packaging/chocolatey/tools/"*.ps1 "${PACK_DIR}/tools/"
-python3 - "$PACK_DIR" "${OUT}/runeverything.${VERSION}.nupkg" <<'PY'
-import zipfile, pathlib, sys
-root = pathlib.Path(sys.argv[1])
-out = pathlib.Path(sys.argv[2])
-with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-    for p in root.rglob("*"):
+amd = sha256(out / "runeverything_windows_amd64.zip")
+arm = sha256(out / "runeverything_windows_arm64.zip")
+
+ns = nuspec.read_text()
+ns = re.sub(r"<version>[^<]+</version>", f"<version>{version}</version>", ns, count=1)
+nuspec.write_text(ns)
+
+ps = install_ps1.read_text()
+ps = re.sub(r"(?m)^\$version = '.*'", f"$version = '{version}'", ps, count=1)
+ps = re.sub(r"(?m)^\$checksumAmd = '.*'", f"$checksumAmd = '{amd}'", ps, count=1)
+ps = re.sub(r"(?m)^\$checksumArm = '.*'", f"$checksumArm = '{arm}'", ps, count=1)
+install_ps1.write_text(ps)
+
+pack = pathlib.Path(tempfile.mkdtemp())
+(pack / "tools").mkdir()
+shutil.copy(nuspec, pack / "runeverything.nuspec")
+for f in (install_ps1.parent).glob("*.ps1"):
+    shutil.copy(f, pack / "tools" / f.name)
+nupkg = out / f"runeverything.{version}.nupkg"
+with zipfile.ZipFile(nupkg, "w", zipfile.ZIP_DEFLATED) as z:
+    for p in pack.rglob("*"):
         if p.is_file():
-            z.write(p, p.relative_to(root).as_posix())
-print("wrote", out)
+            z.write(p, p.relative_to(pack).as_posix())
+shutil.rmtree(pack)
+print(f"updated {install_ps1}")
+print(f"  amd64={amd}")
+print(f"  arm64={arm}")
+print(f"wrote {nupkg}")
 PY
-rm -rf "$PACK_DIR"
-echo "updated chocolatey package for v${VERSION}"
