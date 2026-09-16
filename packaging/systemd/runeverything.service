@@ -1,0 +1,13 @@
+[Unit]
+Description=RunEverything Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/runeverything run -no-qr
+Restart=on-failure
+RestartSec=3
+Environment=RE_HOME=%h/.runeverything
+
+[Install]
+WantedBy=default.target

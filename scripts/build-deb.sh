@@ -20,22 +20,8 @@ build_deb() {
     "${stage}/lib/systemd/user" "${stage}/usr/share/doc/runeverything"
 
   install -m 0755 "$bin" "${stage}/usr/bin/runeverything"
-
-  cat > "${stage}/lib/systemd/user/runeverything.service" <<EOF
-[Unit]
-Description=RunEverything Agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart=/usr/bin/runeverything run -no-qr
-Restart=on-failure
-RestartSec=3
-Environment=RE_HOME=%h/.runeverything
-
-[Install]
-WantedBy=default.target
-EOF
+  install -m 0644 "${ROOT}/packaging/systemd/runeverything.service" \
+    "${stage}/lib/systemd/user/runeverything.service"
 
   cat > "${stage}/usr/share/doc/runeverything/copyright" <<EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/

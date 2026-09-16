@@ -1,0 +1,22 @@
+# Contributor: foqerhk <123921693+foqerhk@users.noreply.github.com>
+# Maintainer: foqerhk <123921693+foqerhk@users.noreply.github.com>
+pkgname=runeverything
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Open-source remote agent for Intent Computing"
+url="https://github.com/foqerhk/runeverything"
+arch="x86_64 aarch64"
+license="MIT"
+depends=""
+makedepends=""
+options="!check"
+# Prebuilt binaries from GitHub Releases (no compile on target).
+source_x86_64="https://github.com/foqerhk/runeverything/releases/download/v${pkgver}/runeverything_linux_amd64.tar.gz"
+source_aarch64="https://github.com/foqerhk/runeverything/releases/download/v${pkgver}/runeverything_linux_arm64.tar.gz"
+# Update with: scripts/sync-alpine-apkbuild.sh
+sha512sums_x86_64="0fbc2aaa0fa1726bd87c1b56b3dda8c59ceff2f1ca6bd5c9f175dcc230b18b72d1cc0a880a4fb674218881b8e12e058538fca1cd8579e386c130d0f8ab5cb397"
+sha512sums_aarch64="5f385740e90e62722b425ebea07c9d71a4e80ecd4010ee460ae1a1fa6e7d47616286a0a6ac20602b39c5e88ccd9a70dca17a36d8044030d933ef35903e0bfebb"
+
+package() {
+  install -Dm755 runeverything "$pkgdir"/usr/bin/runeverything
+}

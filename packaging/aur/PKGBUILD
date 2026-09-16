@@ -1,4 +1,5 @@
 # Maintainer: foqerhk <123921693+foqerhk@users.noreply.github.com>
+# Contributor: foqerhk
 pkgname=runeverything
 pkgver=0.1.0
 pkgrel=1
@@ -7,11 +8,20 @@ arch=('x86_64' 'aarch64')
 url="https://github.com/foqerhk/runeverything"
 license=('MIT')
 depends=()
+optdepends=('tmux: persistent remote sessions')
 source_x86_64=("https://github.com/foqerhk/runeverything/releases/download/v${pkgver}/runeverything_linux_amd64.tar.gz")
 source_aarch64=("https://github.com/foqerhk/runeverything/releases/download/v${pkgver}/runeverything_linux_arm64.tar.gz")
+source+=("runeverything.service::https://raw.githubusercontent.com/foqerhk/runeverything/main/packaging/systemd/runeverything.service")
 sha256sums_x86_64=('1d8f251ab3da5fccaa111964efe1cc30bf728eb0f1d9d1e743439169e352c6ff')
 sha256sums_aarch64=('ac54c042e839e2ef5c7254dd917d024be0269a5d15890fc77293b8e327e5b866')
+sha256sums=('SKIP')
 
 package() {
   install -Dm755 runeverything "${pkgdir}/usr/bin/runeverything"
+  install -Dm644 runeverything.service "${pkgdir}/usr/lib/systemd/user/runeverything.service"
+}
+
+post_install() {
+  echo "Pair with: runeverything pair"
+  echo "Optional: systemctl --user enable --now runeverything"
 }
