@@ -33,14 +33,27 @@ curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/
 
 ### Debian / Ubuntu（apt）
 
+**推荐：一条命令搞定（自动加源 + 安装）**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-apt.sh | sudo bash
 ```
 
-APT 源：
+之后即可直接：
 
 ```bash
-echo 'deb [trusted=yes] https://foqerhk.github.io/runeverything/apt stable main' \
+sudo apt update
+sudo apt install runeverything
+sudo apt upgrade runeverything
+```
+
+> 官方源里没有本包，第一次不能只跑裸的 `apt install runeverything`。  
+> 一键脚本会写入 `/etc/apt/sources.list.d/runeverything.list`，之后就和装其它软件一样。
+
+若只要手动加源：
+
+```bash
+echo 'deb [trusted=yes arch=amd64,arm64] https://foqerhk.github.io/runeverything/apt stable main' \
   | sudo tee /etc/apt/sources.list.d/runeverything.list
 sudo apt update && sudo apt install runeverything
 ```
