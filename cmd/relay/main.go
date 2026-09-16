@@ -1,16 +1,23 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/foqerhk/runeverything/internal/auth"
+	"github.com/foqerhk/runeverything/internal/netutil"
+	"github.com/foqerhk/runeverything/internal/p2p"
 	"github.com/foqerhk/runeverything/internal/protocol"
 	"github.com/foqerhk/runeverything/internal/tunnel"
 )
@@ -170,6 +177,19 @@ func (h *Hub) deviceOnline(id string) (name string, online bool) {
 	return d.Name, d.Agent != nil
 }
 
+func (h *Hub) connectionLoad() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := 0
+	for _, d := range h.devices {
+		if d.Agent != nil {
+			n++
+		}
+		n += len(d.Clients)
+	}
+	return n
+}
+
 func writeErr(c *tunnel.Conn, id, code, msg string) {
 	b, _ := protocol.Encode(protocol.TypeError, id, protocol.ErrorData{Code: code, Message: msg})
 	_ = c.WriteText(b)
@@ -177,24 +197,89 @@ func writeErr(c *tunnel.Conn, id, code, msg string) {
 
 func main() {
 	listen := flag.String("listen", ":8787", "HTTP listen address")
-	public := flag.String("public", "", "Public relay WebSocket URL advertised to clients (default derived from request host)")
+	public := flag.String("public", "", "Public relay WebSocket URL advertised to clients (default derived from public IP)")
+	region := flag.String("region", os.Getenv("RE_REGION"), "optional region tag for peer gossip")
+	share := flag.Bool("share", true, "advertise this relay via P2P gossip (override with RE_SHARE_RELAY=0)")
+	allowWS := flag.Bool("allow-ws", false, "accept ws:// peers in gossip (dev only)")
 	flag.Parse()
 
 	hub := NewHub(*public)
+
+	publicURL := strings.TrimSpace(*public)
+	if publicURL == "" {
+		publicURL = derivePublicRelayURL(*listen)
+	}
+	hub.public = publicURL
+
+	shareCfg := *share
+	sharing := p2p.SharingEnabled(&shareCfg)
+	store := p2p.NewStore(p2p.DefaultPeerTTL, *allowWS || strings.HasPrefix(publicURL, "ws://"))
+	if publicURL != "" {
+		store.SetSelf(publicURL)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	p2p.Mount(mux, store, sharing && publicURL != "" && !netutil.IsLoopbackHost(hostOfURL(publicURL)))
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		handleWS(hub, w, r)
 	})
 
-	log.Printf("RunEverything relay listening on %s (ws path /ws)", *listen)
+	if sharing && publicURL != "" && !netutil.IsLoopbackHost(hostOfURL(publicURL)) {
+		g := &p2p.Gossiper{
+			Store:   store,
+			Share:   true,
+			Region:  *region,
+			Version: "0.1.0",
+			LoadFunc: func() int {
+				return hub.connectionLoad()
+			},
+		}
+		g.Start()
+		log.Printf("p2p share enabled; self=%s", publicURL)
+	} else {
+		log.Printf("p2p share disabled (or no public URL); peer exchange still serves known addrs")
+	}
+
+	log.Printf("RunEverything relay listening on %s (ws path /ws) public=%s", *listen, publicURL)
 	if err := http.ListenAndServe(*listen, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func hostOfURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return u.Hostname()
+}
+
+func derivePublicRelayURL(listen string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	host := netutil.DetectPublicHost(ctx)
+	if host == "" {
+		return ""
+	}
+	port := "8787"
+	if strings.HasPrefix(listen, ":") {
+		port = strings.TrimPrefix(listen, ":")
+	} else if _, p, err := net.SplitHostPort(listen); err == nil && p != "" {
+		port = p
+	}
+	scheme := "ws"
+	if os.Getenv("RE_RELAY_TLS") == "1" {
+		scheme = "wss"
+	}
+	return fmt.Sprintf("%s://%s/ws", scheme, net.JoinHostPort(host, port))
 }
 
 func handleWS(hub *Hub, w http.ResponseWriter, r *http.Request) {

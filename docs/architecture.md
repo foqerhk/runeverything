@@ -50,14 +50,16 @@ Whoever scans a valid pairing QR can obtain a `session_token` and open PTY sessi
 ## Local development
 
 ```bash
-# Terminal 1
-go run ./cmd/relay -listen :8787
+# Terminal 1 — public/seed relay (enable -allow-ws for local ws://)
+go run ./cmd/relay -listen :8787 -public ws://127.0.0.1:8787/ws -allow-ws
 
-# Terminal 2
-go run ./cmd/agent -relay ws://127.0.0.1:8787/ws
+# Terminal 2 — another volunteer (gossips with seed via RE_SEEDS)
+RE_SEEDS=ws://127.0.0.1:8787/ws \
+  go run ./cmd/relay -listen :8788 -public ws://127.0.0.1:8788/ws -allow-ws
 
-# Terminal 3 — after reading device_id + pairing_token from QR JSON
-go run ./cmd/retest -relay ws://127.0.0.1:8787/ws -device DEVICE -token TOKEN
+# Terminal 3 — home agent discovers via seeds then picks lowest ping
+RE_SEEDS=ws://127.0.0.1:8787/ws \
+  go run ./cmd/agent
 ```
 
 ## Production notes
@@ -65,3 +67,15 @@ go run ./cmd/retest -relay ws://127.0.0.1:8787/ws -device DEVICE -token TOKEN
 - Put Relay behind TLS (e.g. Caddy/Nginx) and advertise `wss://...` as `public_relay`.
 - Agent may use an internal `relay_url` while QR embeds `public_relay`.
 - Replace in-memory auth store before multi-instance Relay deployment.
+
+## Volunteer relay directory (P2P)
+
+Bitcoin-style discovery:
+
+1. Official **seed list** on GitHub: `docs/seeds.json` (Pages `/seeds.json`).
+2. Each relay exposes `GET|POST /v1/peers` and gossips addr lists with known peers.
+3. Home agents: load seeds → crawl `/v1/peers` → probe `/healthz` → **lowest ping** wins.
+4. Opt out of advertising: `RE_SHARE_RELAY=0` / `-share=false`.
+5. Volunteer relays are **connectivity only**, not a confidentiality boundary.
+
+`cmd/directory` remains an optional centralized registry for ops; the default path is P2P.

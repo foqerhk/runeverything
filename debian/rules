@@ -1,11 +1,7 @@
 #!/usr/bin/make -f
-# Build Go agent on Launchpad by fetching a pinned Go toolchain
-# (Ubuntu archive may not ship Go 1.24+ yet).
+# Install prebuilt Go binaries (Launchpad builders cannot fetch go.dev toolchains).
 
 export DH_VERBOSE = 1
-export GO_VERSION ?= 1.24.7
-
-UPSTREAM_VERSION := $(shell dpkg-parsechangelog -S Version | cut -d- -f1)
 
 %:
 	dh $@
@@ -13,38 +9,25 @@ UPSTREAM_VERSION := $(shell dpkg-parsechangelog -S Version | cut -d- -f1)
 override_dh_auto_configure:
 
 override_dh_auto_build:
-	set -e; \
-	arch=$$(dpkg-architecture -qDEB_HOST_ARCH); \
-	case "$$arch" in \
-	  amd64) goarch=amd64 ;; \
-	  arm64) goarch=arm64 ;; \
-	  *) echo "unsupported arch: $$arch" >&2; exit 1 ;; \
-	esac; \
-	rm -rf debian/.go; \
-	mkdir -p debian/.go; \
-	curl -fsSL "https://go.dev/dl/go$(GO_VERSION).linux-$$goarch.tar.gz" \
-	  | tar -C debian/.go -xz; \
-	export PATH="$(CURDIR)/debian/.go/go/bin:$$PATH"; \
-	export HOME="$(CURDIR)/debian/.go-home"; \
-	export GOPATH="$(CURDIR)/debian/.gopath"; \
-	export GOCACHE="$(CURDIR)/debian/.gocache"; \
-	export GOTOOLCHAIN=local; \
-	export GOPROXY=https://proxy.golang.org,direct; \
-	export GOSUMDB=sum.golang.org; \
-	mkdir -p "$$HOME" "$$GOPATH" "$$GOCACHE"; \
-	go version; \
-	CGO_ENABLED=0 go build -trimpath \
-	  -ldflags "-s -w -X main.version=$(UPSTREAM_VERSION)" \
-	  -o runeverything ./cmd/agent
+	@echo "Using prebuilt binaries from debian/binaries/"
 
 override_dh_auto_test:
 
 override_dh_auto_install:
-	install -D -m 0755 runeverything \
-	  debian/runeverything/usr/bin/runeverything
+	set -e; \
+	arch=$$(dpkg-architecture -qDEB_HOST_ARCH); \
+	bin="debian/binaries/$$arch/runeverything"; \
+	test -x "$$bin" || { echo "missing $$bin" >&2; exit 1; }; \
+	install -D -m 0755 "$$bin" debian/runeverything/usr/bin/runeverything; \
 	install -D -m 0644 packaging/systemd/runeverything.service \
 	  debian/runeverything/lib/systemd/user/runeverything.service
 
 override_dh_auto_clean:
-	rm -rf debian/.go debian/.go-home debian/.gopath debian/.gocache runeverything
 	dh_auto_clean || true
+
+# Prebuilt static Go binaries; no shared library deps to process.
+override_dh_shlibdeps:
+	@echo "skipping dh_shlibdeps for static Go binary"
+
+override_dh_strip:
+	@echo "skipping dh_strip for prebuilt Go binary"

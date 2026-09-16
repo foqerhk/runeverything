@@ -149,23 +149,37 @@ choco install runeverything -y --source "https://github.com/foqerhk/runeverythin
 
 ## 使用
 
-### 1. 配置中继（必做）
+### 1. 中继（BTC 风格 P2P 发现）
 
-家用电脑在 NAT 后面时，需要一个可达的 Relay。先设环境变量或改配置文件：
+**家庭 / NAT（Mac 等）**：默认从 GitHub 官方 **seeds.json** 起步，向种子节点拉取 `/v1/peers`，递归发现更多公益节点，再对候选做 health ping，**选延迟最低**的作为转发。也可手动指定：
 
 ```bash
 export RE_RELAY=wss://你的中继地址/ws
-# 可选：写进配置
-# ~/.runeverything/config.json 里的 relay_url / public_relay
+# config.json 可设 "relay_manual": true 锁定，不再自动换节点
 ```
 
-本地自测可以起仓库自带的 Relay：
+**公网 Linux**：跑 Relay 时默认把自己 gossip 进网络（可被家庭用户发现）。这是**带宽公益**，可随时关闭：
 
 ```bash
-# 另开一个终端
-go run ./cmd/relay -listen :8787
-# Agent 侧
+export RE_SHARE_RELAY=0
+go run ./cmd/relay -listen :8787 -share=false
+```
+
+#### 公益中继说明（必读）
+
+- 官方只在 GitHub 维护**初始种子列表**（`docs/seeds.json` → Pages `/seeds.json`）；其余节点靠 P2P 互相交换地址发现。
+- 志愿者贡献的是**连通性 / 带宽**，**不是安全保障**；中继可能看到明文流量。
+- 谁能操作你的电脑，仍只取决于谁扫了你的配对码。
+- 种子 URL：`RE_SEEDS_URL`（默认 Pages + raw GitHub）；或 `RE_SEEDS=wss://a/ws,wss://b/ws` 直接指定。
+
+本地自测：
+
+```bash
+# 终端 1 — 种子/公益节点
+go run ./cmd/relay -listen :8787 -public ws://127.0.0.1:8787/ws -allow-ws -share=false
+# 终端 2 — Agent（手动指定本地，跳过公网发现）
 export RE_RELAY=ws://127.0.0.1:8787/ws
+go run ./cmd/agent
 ```
 
 ### 2. 启动 Agent 并扫码
@@ -188,13 +202,23 @@ runeverything pair
 runeverything status
 ```
 
-### 3. 常驻后台（可选）
+### 3. 常驻后台（家庭桌面 24h 在线）
+
+家庭电脑要当远端，需要**进程常驻 + 尽量不睡眠**。锁屏一般不断网；真正会掉线的是睡眠/休眠/断网。
 
 | 系统 | 方式 |
 |------|------|
-| macOS | `brew services start runeverything` |
-| Linux（systemd） | `systemctl --user enable --now runeverything` |
-| Windows | 安装脚本会注册登录计划任务；或手动运行 `runeverything run -no-qr` |
+| macOS | `brew services start runeverything` 或 install.sh 的 launchd |
+| Linux 桌面 | `systemctl --user enable --now runeverything`（安装脚本会尝试 `loginctl enable-linger`） |
+| Windows | 安装脚本注册登录计划任务 |
+
+Agent 运行时会自动防闲置睡眠（macOS `caffeinate`、Windows Away Mode、Linux `systemd-inhibit`）。可用 `RE_KEEP_AWAKE=0` 关闭。
+
+建议：
+
+- 插着电源；笔记本合盖可能仍睡眠（macOS 需合盖模式 + 外接电源/显示器）
+- 系统设置里把「自动睡眠」调长或关掉；允许锁屏，不必一直亮屏
+- 路由器勿踢长连接；公司网/访客 Wi‑Fi 可能限制常驻
 
 ### 常用命令
 
@@ -211,7 +235,11 @@ runeverything status
 
 | 环境变量 | 说明 | 默认 |
 |----------|------|------|
-| `RE_RELAY` | Agent 连接的 Relay WebSocket 地址 | `ws://127.0.0.1:8787/ws` |
+| `RE_RELAY` | Agent 连接的 Relay（设置后不再 P2P 发现） | seeds → crawl → 最低 ping |
+| `RE_SHARE_RELAY` | 公网 Relay 是否把自己 gossip 出去 | `1`（`0` 关闭） |
+| `RE_SEEDS_URL` | 官方种子列表 JSON | Pages `seeds.json` + raw GitHub 回退 |
+| `RE_SEEDS` | 逗号分隔种子 URL（覆盖文件） | 空 |
+| `RE_KEEP_AWAKE` | Agent 运行时阻止闲置睡眠 | `1`（`0` 关闭） |
 | `RE_HOME` | 身份与配置目录 | `~/.runeverything` |
 
 `config.json` 示例：
@@ -219,7 +247,9 @@ runeverything status
 ```json
 {
   "relay_url": "wss://your-relay.example/ws",
-  "public_relay": "wss://your-relay.example/ws"
+  "public_relay": "wss://your-relay.example/ws",
+  "relay_manual": true,
+  "share_relay": false
 }
 ```
 

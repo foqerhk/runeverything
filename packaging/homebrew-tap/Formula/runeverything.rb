@@ -63,12 +63,11 @@ class Runeverything < Formula
       Pair with KoKo (print QR):
         runeverything pair
 
-      Set relay URL (required for NAT traversal):
-        export RE_RELAY=wss://your-relay.example/ws
-        # or edit ~/.runeverything/config.json
-
-      Optional background service:
+      Background service (keeps agent alive; agent also prevents idle sleep):
         brew services start runeverything
+
+      Desktop tip: leave the Mac plugged in. Lock screen is fine; avoid Sleep.
+      Disable keep-awake with: export RE_KEEP_AWAKE=0
     EOS
   end
 

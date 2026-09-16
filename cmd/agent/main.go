@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -17,6 +18,9 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/foqerhk/runeverything/internal/identity"
+	"github.com/foqerhk/runeverything/internal/keepalive"
+	"github.com/foqerhk/runeverything/internal/netutil"
+	"github.com/foqerhk/runeverything/internal/p2p"
 	"github.com/foqerhk/runeverything/internal/pairing"
 	"github.com/foqerhk/runeverything/internal/protocol"
 	ptyx "github.com/foqerhk/runeverything/internal/pty"
@@ -65,10 +69,43 @@ Usage:
   runeverything version   Print version
 
 Flags (run):
-  -relay URL              Relay WebSocket URL (default from config / RE_RELAY)
+  -relay URL              Relay WebSocket URL (default: auto-discover volunteer relay, or RE_RELAY)
   -public URL             URL embedded in QR for clients (defaults to -relay)
   -no-qr                  Do not print QR on start (still registers pairing token)
+
+Volunteer relays (Bitcoin-style P2P):
+  Official seeds are on GitHub (seeds.json). Agents crawl /v1/peers from seeds,
+  discover more relays, and pick the lowest-ping node. Opt out of sharing with RE_SHARE_RELAY=0.
 `)
+}
+
+func applyRelayDiscovery(cfg *identity.Config, relayFlag string) (discovered bool) {
+	if !identity.ShouldAutoDiscover(cfg, relayFlag) {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	relay, pub, ok := p2p.ResolveForAgent(ctx, cfg.RelayURL, cfg.PublicRelay, true)
+	cfg.RelayURL = relay
+	cfg.PublicRelay = pub
+	if ok {
+		log.Printf("selected relay %s (lowest ping)", relay)
+		return true
+	}
+	return false
+}
+
+func finalizePublicRelay(cfg *identity.Config, discovered bool) {
+	if cfg.PublicRelay == "" {
+		cfg.PublicRelay = cfg.RelayURL
+	}
+	if discovered {
+		return
+	}
+	// Colocated local default: advertise a reachable public host in the QR.
+	if identity.HostIsLoopbackRelay(cfg.PublicRelay) {
+		cfg.PublicRelay = netutil.ResolveClientRelay(cfg.PublicRelay, cfg.RelayURL)
+	}
 }
 
 func cmdStatus() {
@@ -86,6 +123,8 @@ func cmdStatus() {
 	fmt.Printf("name:         %s\n", id.Name)
 	fmt.Printf("relay:        %s\n", cfg.RelayURL)
 	fmt.Printf("public_relay: %s\n", cfg.PublicRelay)
+	fmt.Printf("relay_manual: %v\n", cfg.RelayManual)
+	fmt.Printf("share_relay:  %v\n", p2p.SharingEnabled(cfg.ShareRelay))
 	osName, arch := identity.PlatformInfo()
 	fmt.Printf("platform:     %s/%s\n", osName, arch)
 }
@@ -105,13 +144,13 @@ func cmdPair() {
 	}
 	if *relay != "" {
 		cfg.RelayURL = *relay
+		cfg.RelayManual = true
 	}
 	if *public != "" {
 		cfg.PublicRelay = *public
 	}
-	if cfg.PublicRelay == "" {
-		cfg.PublicRelay = cfg.RelayURL
-	}
+	discovered := applyRelayDiscovery(cfg, *relay)
+	finalizePublicRelay(cfg, discovered)
 
 	// Connect briefly to publish pair_offer, then print QR.
 	a := &Agent{id: id, cfg: cfg}
@@ -149,13 +188,16 @@ func cmdRun() {
 	}
 	if *relay != "" {
 		cfg.RelayURL = *relay
+		cfg.RelayManual = true
+	}
+	if identity.RelayExplicitlySet() {
+		cfg.RelayManual = true
 	}
 	if *public != "" {
 		cfg.PublicRelay = *public
 	}
-	if cfg.PublicRelay == "" {
-		cfg.PublicRelay = cfg.RelayURL
-	}
+	discovered := applyRelayDiscovery(cfg, *relay)
+	finalizePublicRelay(cfg, discovered)
 	_ = identity.SaveConfig(cfg)
 
 	a := &Agent{
@@ -165,12 +207,16 @@ func cmdRun() {
 		printQR:  !*noQR,
 	}
 
+	stopAwake := keepalive.Start()
+	defer stopAwake()
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-sig
 		log.Println("shutting down")
+		stopAwake()
 		a.closeAll()
 		os.Exit(0)
 	}()

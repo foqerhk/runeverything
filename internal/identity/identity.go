@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/foqerhk/runeverything/internal/netutil"
 )
 
 const (
@@ -23,8 +25,13 @@ type Identity struct {
 }
 
 type Config struct {
-	RelayURL     string `json:"relay_url"`
-	PublicRelay  string `json:"public_relay,omitempty"` // URL advertised in QR (may differ from agent connect URL)
+	RelayURL    string `json:"relay_url"`
+	PublicRelay string `json:"public_relay,omitempty"` // URL advertised in QR (may differ from agent connect URL)
+	// ShareRelay controls volunteer directory announce when this host runs a relay.
+	// nil = default on; false = opted out. Env RE_SHARE_RELAY overrides.
+	ShareRelay *bool `json:"share_relay,omitempty"`
+	// RelayManual means the user pinned relay_url (do not auto-discover).
+	RelayManual bool `json:"relay_manual,omitempty"`
 }
 
 func HomeDir() (string, error) {
@@ -127,7 +134,9 @@ func LoadConfig() (*Config, error) {
 			if relay == "" {
 				relay = "ws://127.0.0.1:8787/ws"
 			}
-			return &Config{RelayURL: relay, PublicRelay: relay}, nil
+			cfg := &Config{RelayURL: relay, PublicRelay: relay}
+			cfg.PublicRelay = netutil.ResolveClientRelay(cfg.PublicRelay, cfg.RelayURL)
+			return cfg, nil
 		}
 		return nil, err
 	}
@@ -137,10 +146,12 @@ func LoadConfig() (*Config, error) {
 	}
 	if v := os.Getenv("RE_RELAY"); v != "" {
 		cfg.RelayURL = v
+		cfg.RelayManual = true
 	}
 	if cfg.PublicRelay == "" {
 		cfg.PublicRelay = cfg.RelayURL
 	}
+	cfg.PublicRelay = netutil.ResolveClientRelay(cfg.PublicRelay, cfg.RelayURL)
 	return &cfg, nil
 }
 

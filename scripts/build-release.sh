@@ -25,14 +25,19 @@ build_one() {
   echo "==> building ${name}"
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
     -o "${tmp}/runeverything${ext}" "${ROOT}/cmd/agent"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+    -o "${tmp}/runeverything-relay${ext}" "${ROOT}/cmd/relay"
+  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+    -o "${tmp}/runeverything-directory${ext}" "${ROOT}/cmd/directory"
 
   if [[ "$goos" == "windows" ]]; then
-    (cd "$tmp" && zip -q "${OUT}/${name}.zip" "runeverything${ext}")
+    (cd "$tmp" && zip -q "${OUT}/${name}.zip" "runeverything${ext}" "runeverything-relay${ext}" "runeverything-directory${ext}")
   else
-    tar -C "$tmp" -czf "${OUT}/${name}.tar.gz" "runeverything${ext}"
+    tar -C "$tmp" -czf "${OUT}/${name}.tar.gz" "runeverything${ext}" "runeverything-relay${ext}" "runeverything-directory${ext}"
   fi
-  # Also keep raw binary for install.sh fallback naming
+  # Also keep raw agent binary for install.sh fallback naming
   cp "${tmp}/runeverything${ext}" "${OUT}/${name}${ext}"
+  cp "${tmp}/runeverything-relay${ext}" "${OUT}/runeverything-relay_${goos}_${goarch}${ext}"
   rm -rf "$tmp"
 }
 
