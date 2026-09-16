@@ -21,7 +21,7 @@ KoKo (手机)  ←── WSS ──→  Relay（中继）  ←── WSS ──�
 |------|----------|
 | **macOS** | Homebrew |
 | **Linux** | 自动识别脚本（apt / dnf / zypper / pacman / apk） |
-| **Windows** | Scoop 或 PowerShell 脚本 |
+| **Windows** | PowerShell 一键脚本（也可 Scoop / winget / Chocolatey） |
 
 ### macOS
 
@@ -95,18 +95,54 @@ curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/
 
 ### Windows
 
-**Scoop（推荐）**
+Windows 上任选一种即可（推荐从上到下）：
 
-```powershell
-scoop bucket add runeverything https://github.com/foqerhk/scoop-runeverything
-scoop install runeverything
-```
+#### 1）PowerShell 一键安装（最省事，无需预先装包管理器）
 
-**PowerShell 一键脚本**
+以**管理员或普通用户**打开 PowerShell：
 
 ```powershell
 irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
 ```
+
+脚本会：下载发布包 → 装到 `%LOCALAPPDATA%\RunEverything\bin` → 加入用户 PATH → 注册登录自启 → 打印配对二维码。
+
+可选：先指定中继再装：
+
+```powershell
+$env:RE_RELAY = "wss://your-relay.example/ws"
+irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
+```
+
+#### 2）Scoop
+
+```powershell
+scoop bucket add runeverything https://github.com/foqerhk/scoop-runeverything
+scoop install runeverything
+runeverything pair
+```
+
+#### 3）winget（用仓库内清单，无需等官方源收录）
+
+需已安装 [App Installer / winget](https://aka.ms/getwinget)：
+
+```powershell
+irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-winget.ps1 | iex
+```
+
+或在克隆仓库后：
+
+```powershell
+winget install --manifest .\packaging\winget\Foqerhk.RunEverything\0.1.0
+```
+
+#### 4）Chocolatey
+
+```powershell
+choco install runeverything -y --source "https://github.com/foqerhk/runeverything/releases/download/v0.1.0/"
+```
+
+（需本机已安装 Chocolatey；nupkg 随 Release 发布。）
 
 ---
 
