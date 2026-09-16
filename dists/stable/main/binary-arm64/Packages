@@ -1,0 +1,16 @@
+Package: runeverything
+Version: 0.1.1
+Section: utils
+Priority: optional
+Architecture: arm64
+Maintainer: foqerhk <123921693+foqerhk@users.noreply.github.com>
+Installed-Size: 5964
+Homepage: https://github.com/foqerhk/runeverything
+Description: Open-source remote agent for Intent Computing
+ Headless agent that pairs via QR code and exposes a PTY session
+ through a relay for Intent Computing clients.
+Filename: pool/main/runeverything_0.1.1_arm64.deb
+Size: 2458682
+MD5sum: ad9a4f3bd15dd891207135bcf3e17dd1
+SHA256: 008cf0a617d29ca8dc663f519f03cd17ac95a19504e9439cb40099fa7412e02c
+

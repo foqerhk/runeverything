@@ -1,0 +1,18 @@
+Origin: RunEverything
+Label: RunEverything
+Suite: stable
+Codename: stable
+Architectures: amd64 arm64
+Components: main
+Description: RunEverything APT repository
+Date: 三, 16  9 2026 10:23:42 UTC
+MD5Sum:
+ 9466c11853ce9102ff8878d97070744b      579 main/binary-amd64/Packages
+ a324c68e7b41003ef0d75778810af116      416 main/binary-amd64/Packages.gz
+ c53353ab8dcd94bb5836470006695f6a      579 main/binary-arm64/Packages
+ cd2c76a4ed023bcdd96b35efd3856235      418 main/binary-arm64/Packages.gz
+SHA256:
+ 7cf80b825f8722c361ba06ad9bf0a013de2a33c30953f26ef58adf18166eabec      579 main/binary-amd64/Packages
+ 145d4165183efa1c598957fa7ee9816eaebed94ea711af6d4a6195f5d7df2551      416 main/binary-amd64/Packages.gz
+ 70d5adca321c3131ecb3c0320005b851d299097b7829bc5be96e13939b44d0d7      579 main/binary-arm64/Packages
+ f0a9a900d14a406d5dd45b08eea6473a62710024f0b2cd9df607ce3dff849d06      418 main/binary-arm64/Packages.gz
