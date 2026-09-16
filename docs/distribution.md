@@ -13,7 +13,7 @@
 | openSUSE | `install-rpm.sh`（zypper） | |
 | Arch / Manjaro | `install-arch.sh` / AUR PKGBUILD | |
 | Alpine | `install-apk.sh` / APKBUILD | |
-| Windows | Scoop | `install.ps1` / winget |
+| Windows | PowerShell 一键 `install.ps1` | Scoop / winget / Chocolatey |
 
 ## macOS — Homebrew
 
@@ -91,14 +91,34 @@ APKBUILD：[`packaging/alpine/APKBUILD`](../packaging/alpine/APKBUILD)
 curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.sh | sh
 ```
 
-## Windows — Scoop
+## Windows
+
+### PowerShell 一键（推荐，无需预先装包管理器）
+
+```powershell
+irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
+```
+
+### Scoop
 
 ```powershell
 scoop bucket add runeverything https://github.com/foqerhk/scoop-runeverything
 scoop install runeverything
 ```
 
-脚本：`irm …/install.ps1 | iex`。winget manifest 见 `packaging/winget`。
+### winget（仓库内清单）
+
+```powershell
+irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install-winget.ps1 | iex
+```
+
+### Chocolatey
+
+```powershell
+choco install runeverything -y --source "https://github.com/foqerhk/runeverything/releases/download/v0.1.0/"
+```
+
+nupkg 由 `scripts/sync-chocolatey.sh` 生成并随 Release 发布。
 
 ## 发版流程
 
@@ -107,6 +127,7 @@ scoop install runeverything
 ./scripts/sync-homebrew-formula.sh 0.1.0
 ./scripts/sync-scoop-manifest.sh 0.1.0
 ./scripts/sync-winget-manifest.sh 0.1.0
+./scripts/sync-chocolatey.sh 0.1.0
 ./scripts/sync-aur-pkgbuild.sh 0.1.0
 ./scripts/sync-alpine-apkbuild.sh 0.1.0
 gh release create v0.1.0 dist/v0.1.0/* --title "v0.1.0"
@@ -121,5 +142,6 @@ runeverything_linux_{amd64,arm64}.tar.gz
 runeverything_windows_{amd64,arm64}.zip
 runeverything_<ver>_{amd64,arm64}.deb
 runeverything-<ver>-1.{x86_64,aarch64}.rpm
+runeverything.<ver>.nupkg
 SHA256SUMS
 ```
