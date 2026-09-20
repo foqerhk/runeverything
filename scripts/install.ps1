@@ -89,7 +89,7 @@ if ($env:Path -notlike "*$InstallDir*") {
 # Autostart via scheduled task (runs at logon; agent prevents sleep itself)
 $TaskName = "RunEverythingAgent"
 try {
-  $Action = New-ScheduledTaskAction -Execute $Target -Argument "run -no-qr"
+  $Action = New-ScheduledTaskAction -Execute $Target -Argument "tray"
   $Trigger = New-ScheduledTaskTrigger -AtLogOn
   $Settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `

@@ -110,6 +110,7 @@ func helperCapture(maxW, maxH int) (*image.RGBA, error) {
 
 type helperInjector struct {
 	screenW, screenH int
+	relative         bool
 }
 
 func (i *helperInjector) SetScreenSize(w, h int) {
@@ -121,6 +122,8 @@ func (i *helperInjector) SetScreenSize(w, h int) {
 	}
 }
 
+func (i *helperInjector) SetRelativeMouse(on bool) { i.relative = on }
+
 func (i *helperInjector) Move(x, y float64) error {
 	cli, err := winhelper.Dial(2 * time.Second)
 	if err != nil {
@@ -128,6 +131,34 @@ func (i *helperInjector) Move(x, y float64) error {
 	}
 	defer cli.Close()
 	_, err = cli.Call(winhelper.Request{Op: "move", X: x, Y: y})
+	return err
+}
+
+func (i *helperInjector) MoveRelative(dx, dy float64) error {
+	cli, err := winhelper.Dial(2 * time.Second)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+	_, err = cli.Call(winhelper.Request{Op: "move_rel", X: dx, Y: dy})
+	if err != nil {
+		// older helper: approximate via absolute if screen size known
+		ax := 0.5 + dx
+		ay := 0.5 + dy
+		if ax < 0 {
+			ax = 0
+		}
+		if ay < 0 {
+			ay = 0
+		}
+		if ax > 1 {
+			ax = 1
+		}
+		if ay > 1 {
+			ay = 1
+		}
+		_, err = cli.Call(winhelper.Request{Op: "move", X: ax, Y: ay})
+	}
 	return err
 }
 
@@ -148,6 +179,16 @@ func (i *helperInjector) Wheel(delta int) error {
 	}
 	defer cli.Close()
 	_, err = cli.Call(winhelper.Request{Op: "wheel", Delta: delta})
+	return err
+}
+
+func (i *helperInjector) WheelH(delta int) error {
+	cli, err := winhelper.Dial(2 * time.Second)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+	_, err = cli.Call(winhelper.Request{Op: "wheel_h", Delta: delta})
 	return err
 }
 
