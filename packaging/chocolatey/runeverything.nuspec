@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>runeverything</id>
+    <version>0.1.0</version>
+    <title>RunEverything</title>
+    <authors>foqerhk</authors>
+    <owners>foqerhk</owners>
+    <projectUrl>https://github.com/foqerhk/runeverything</projectUrl>
+    <licenseUrl>https://github.com/foqerhk/runeverything/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/foqerhk/runeverything</projectSourceUrl>
+    <docsUrl>https://github.com/foqerhk/runeverything#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/foqerhk/runeverything/issues</bugTrackerUrl>
+    <tags>remote agent intent-computing cli</tags>
+    <summary>Open-source remote agent for Intent Computing</summary>
+    <description>Headless agent that pairs via QR code and exposes a PTY session through a relay for Intent Computing clients (e.g. KoKo).</description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

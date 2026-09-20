@@ -1,0 +1,12 @@
+runeverything (0.1.1-1) noble; urgency=medium
+
+  * P2P volunteer relay discovery, keep-awake, and seed support.
+  * Ship runeverything-relay alongside the agent.
+
+ -- foqerhk <ruier09@qq.com>  Wed, 16 Sep 2026 10:40:00 +0000
+
+runeverything (0.1.0-1) noble; urgency=medium
+
+  * Fix debhelper compat duplication and source options for Launchpad builds.
+
+ -- foqerhk <ruier09@qq.com>  Wed, 16 Sep 2026 08:10:00 +0000

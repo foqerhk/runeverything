@@ -1,0 +1,43 @@
+{
+  "version": "0.1.0",
+  "description": "Open-source remote agent for Intent Computing",
+  "homepage": "https://github.com/foqerhk/runeverything",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/foqerhk/runeverything/releases/download/v0.1.0/runeverything_windows_amd64.zip",
+      "hash": "d90bc02b433767e2150b1e8d48f968cfe0808cd456643ca638422721c11a4ae9",
+      "bin": [
+        "runeverything.exe"
+      ]
+    },
+    "arm64": {
+      "url": "https://github.com/foqerhk/runeverything/releases/download/v0.1.0/runeverything_windows_arm64.zip",
+      "hash": "14b2d081d97c92a1a297b401c848796591eb4bbbb1c26cd547df5621269799d6",
+      "bin": [
+        "runeverything.exe"
+      ]
+    }
+  },
+  "persist": [
+    ".runeverything"
+  ],
+  "env_set": {
+    "RE_HOME": "$dir\\.runeverything"
+  },
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/foqerhk/runeverything/releases/download/v$version/runeverything_windows_amd64.zip"
+      },
+      "arm64": {
+        "url": "https://github.com/foqerhk/runeverything/releases/download/v$version/runeverything_windows_arm64.zip"
+      }
+    }
+  },
+  "notes": [
+    "Pair with: runeverything pair",
+    "Set relay: $env:RE_RELAY = 'wss://your-relay.example/re2'"
+  ]
+}

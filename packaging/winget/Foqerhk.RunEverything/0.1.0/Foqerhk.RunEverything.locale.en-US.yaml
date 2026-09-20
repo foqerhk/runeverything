@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: Foqerhk.RunEverything
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: foqerhk
+PublisherUrl: https://github.com/foqerhk
+PublisherSupportUrl: https://github.com/foqerhk/runeverything/issues
+Author: foqerhk
+PackageName: RunEverything
+PackageUrl: https://github.com/foqerhk/runeverything
+License: MIT
+LicenseUrl: https://github.com/foqerhk/runeverything/blob/main/LICENSE
+ShortDescription: Open-source remote agent for Intent Computing
+Description: Install a headless agent on your machine, pair via QR code, and connect from a mobile Intent Computing app through a relay.
+Moniker: runeverything
+Tags:
+  - agent
+  - remote
+  - intent-computing
+  - cli
+ReleaseNotesUrl: https://github.com/foqerhk/runeverything/releases/tag/v0.1.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
