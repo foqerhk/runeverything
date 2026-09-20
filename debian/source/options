@@ -1,0 +1,2 @@
+# Ignore VCS / local artifacts in Debian source diffs (orig tarball is built separately).
+extend-diff-ignore = (^|/)(\.git|\.github|\.cursor|dist|bin|\.env|\.DS_Store)$

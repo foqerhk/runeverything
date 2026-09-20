@@ -1,0 +1,20 @@
+Source: runeverything
+Section: utils
+Priority: optional
+Maintainer: foqerhk <ruier09@qq.com>
+Build-Depends: debhelper-compat (= 12)
+Standards-Version: 4.6.2
+Homepage: https://github.com/foqerhk/runeverything
+Vcs-Git: https://github.com/foqerhk/runeverything.git
+Vcs-Browser: https://github.com/foqerhk/runeverything
+Rules-Requires-Root: no
+
+Package: runeverything
+Architecture: amd64 arm64
+Depends: ${misc:Depends}
+Description: Open-source remote agent for Intent Computing
+ Headless agent that pairs via QR code and exposes a PTY session
+ through a relay for Intent Computing clients (e.g. KoKo).
+ .
+ Install, then run: runeverything pair
+ Optional user service: systemctl --user enable --now runeverything

@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+# Install prebuilt Go binaries (Launchpad builders cannot fetch go.dev toolchains).
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+	@echo "Using prebuilt binaries from debian/binaries/"
+
+override_dh_auto_test:
+
+override_dh_auto_install:
+	set -e; \
+	arch=$$(dpkg-architecture -qDEB_HOST_ARCH); \
+	bin="debian/binaries/$$arch/runeverything"; \
+	relay="debian/binaries/$$arch/runeverything-relay"; \
+	test -x "$$bin" || { echo "missing $$bin" >&2; exit 1; }; \
+	install -D -m 0755 "$$bin" debian/runeverything/usr/bin/runeverything; \
+	if [ -x "$$relay" ]; then \
+	  install -D -m 0755 "$$relay" debian/runeverything/usr/bin/runeverything-relay; \
+	fi; \
+	install -D -m 0644 packaging/systemd/runeverything.service \
+	  debian/runeverything/lib/systemd/user/runeverything.service
+
+override_dh_auto_clean:
+	dh_auto_clean || true
+
+# Prebuilt static Go binaries; no shared library deps to process.
+override_dh_shlibdeps:
+	@echo "skipping dh_shlibdeps for static Go binary"
+
+override_dh_strip:
+	@echo "skipping dh_strip for prebuilt Go binary"

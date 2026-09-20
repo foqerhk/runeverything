@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: Foqerhk.RunEverything
+PackageVersion: 0.1.0
+Platform:
+  - Windows.Desktop
+MinimumOSVersion: 10.0.17763.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: runeverything.exe
+    PortableCommandAlias: runeverything
+UpgradeBehavior: install
+ReleaseDate: 2026-09-15
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/foqerhk/runeverything/releases/download/v0.1.0/runeverything_windows_amd64.zip
+    InstallerSha256: D90BC02B433767E2150B1E8D48F968CFE0808CD456643CA638422721C11A4AE9
+  - Architecture: arm64
+    InstallerUrl: https://github.com/foqerhk/runeverything/releases/download/v0.1.0/runeverything_windows_arm64.zip
+    InstallerSha256: 14B2D081D97C92A1A297B401C848796591EB4BBBB1C26CD547DF5621269799D6
+ManifestType: installer
+ManifestVersion: 1.6.0

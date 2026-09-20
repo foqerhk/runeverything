@@ -1,0 +1,26 @@
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+.DS_Store
+.idea/
+.vscode/
+*.log
+.cursor/
+.runeverything-gpg/
+**/last_pairing.json
+**/node-join-token.json
+
+.env
+.env.*
+!.env.example
+
+# Prebuilt PPA stage binaries (regenerate locally)
+/debian/binaries/
+
+# Local smoke / RDP artifacts
+/tmp/
+*.png
+desktop_smoke.log
+day_smoke.log
