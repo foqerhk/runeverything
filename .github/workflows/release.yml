@@ -16,20 +16,49 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Install zip
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip
 
       - name: Build release assets
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          chmod +x scripts/build-release.sh
+          chmod +x scripts/build-release.sh scripts/build-windows-setup.sh
           ./scripts/build-release.sh "$ver"
+
+      - name: Write release notes
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          ## Windows
+
+          Download the installer for your PC (Windows **10 / 11** recommended):
+
+          | File | Arch |
+          |------|------|
+          | `RunEverythingSetup_amd64.exe` | 64-bit Intel/AMD (most PCs) |
+          | `RunEverythingSetup_arm64.exe` | Windows on Arm |
+          | `RunEverythingSetup_386.exe` | 32-bit Windows |
+
+          Double-click Setup → tray icon → **Show pairing QR**.
+
+          > Go 1.21+ no longer supports Windows 7 / 8. Please use Windows 10 or newer.
+          EOF
+          # strip leading spaces from heredoc indent
+          sed -i 's/^          //' /tmp/release-notes.md
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           ver="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" "dist/v${ver}"/* \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            --verify-tag
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "dist/v${ver}"/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "dist/v${ver}"/* \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file /tmp/release-notes.md \
+              --verify-tag
+          fi

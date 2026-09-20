@@ -2,8 +2,8 @@
 
 开源、免费的跨平台远程 Agent：装在 Mac / Linux / Windows 上，用手机 App（如 KoKo）扫码连接，远程与 coding agent 交互。
 
-- **开源、免费**，无 GUI
-- 一行命令安装，终端打印**二维码**，扫码即连
+- **开源、免费**；Windows 提供安装包 + 托盘，Mac / Linux 命令行
+- 一行命令或下载 Setup 安装，扫码即连
 - 通过 Relay 穿透 NAT（家用电脑不必开端口）
 
 ```
@@ -19,9 +19,23 @@ KoKo (手机)  ←── wss 信令 + UDP 画面/键鼠 ──→  Relay  ←─
 
 | 系统 | 推荐方式 |
 |------|----------|
+| **Windows** | 下载 `RunEverythingSetup_amd64.exe` 安装（托盘 + 开机自启） |
 | **macOS** | Homebrew |
 | **Linux** | 自动识别脚本（apt / dnf / zypper / pacman / apk） |
-| **Windows** | PowerShell 一键脚本（也可 Scoop / winget / Chocolatey） |
+
+### Windows（推荐：安装包）
+
+1. 打开 [Releases](https://github.com/foqerhk/runeverything/releases/latest)
+2. 按电脑架构下载安装包：
+   - **`RunEverythingSetup_amd64.exe`** — 常见 64 位 PC（推荐）
+   - **`RunEverythingSetup_arm64.exe`** — Windows on Arm
+   - **`RunEverythingSetup_386.exe`** — 32 位 Windows
+3. 双击安装（装到 `%LOCALAPPDATA%\RunEverything`，无需管理员）
+4. 右下角托盘图标 → **Show pairing QR**，用 KoKo 扫码
+
+系统要求：**Windows 10 / 11**（及对应 Server）。当前 Go 工具链自 1.21 起**不再支持 Windows 7 / 8**。
+
+也可继续用 PowerShell / Scoop / winget / Chocolatey（见下文）。
 
 ### macOS
 
@@ -98,15 +112,15 @@ curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/
 
 Windows 上任选一种即可（推荐从上到下）：
 
-#### 1）PowerShell 一键安装（最省事，无需预先装包管理器）
+#### 1）PowerShell 一键安装（备选）
 
-以**管理员或普通用户**打开 PowerShell：
+以普通用户打开 PowerShell：
 
 ```powershell
 irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
 ```
 
-脚本会：下载发布包 → 装到 `%LOCALAPPDATA%\RunEverything\bin` → 加入用户 PATH → 注册登录自启 → 打印配对二维码。
+脚本会：下载发布包 → 装到 `%LOCALAPPDATA%\RunEverything\bin` → 加入用户 PATH → 注册登录自启（`runeverything tray`）→ 可再配对。
 
 可选：先指定中继再装：
 

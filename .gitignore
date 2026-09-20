@@ -19,8 +19,6 @@
 # Prebuilt PPA stage binaries (regenerate locally)
 /debian/binaries/
 
-# Local smoke / RDP artifacts
-/tmp/
-*.png
-desktop_smoke.log
-day_smoke.log
+cmd/winsetup/embedded/runeverything.exe
+!cmd/winsetup/embedded/README.md
+

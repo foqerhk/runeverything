@@ -31,11 +31,18 @@ build_one() {
     -o "${tmp}/runeverything-directory${ext}" "${ROOT}/cmd/directory"
 
   if [[ "$goos" == "windows" ]]; then
+    # One-file GUI installer for end users (embeds agent).
+    mkdir -p "${ROOT}/cmd/winsetup/embedded"
+    cp "${tmp}/runeverything${ext}" "${ROOT}/cmd/winsetup/embedded/runeverything.exe"
+    local setup_name="RunEverythingSetup_${goarch}.exe"
+    echo "==> building ${setup_name}"
+    GOOS=windows GOARCH="$goarch" go build -trimpath -tags embedagent \
+      -ldflags "${LDFLAGS} -H windowsgui" \
+      -o "${OUT}/${setup_name}" "${ROOT}/cmd/winsetup"
     (cd "$tmp" && zip -q "${OUT}/${name}.zip" "runeverything${ext}" "runeverything-relay${ext}" "runeverything-directory${ext}")
   else
     tar -C "$tmp" -czf "${OUT}/${name}.tar.gz" "runeverything${ext}" "runeverything-relay${ext}" "runeverything-directory${ext}"
   fi
-  # Also keep raw agent binary for install.sh fallback naming
   cp "${tmp}/runeverything${ext}" "${OUT}/${name}${ext}"
   cp "${tmp}/runeverything-relay${ext}" "${OUT}/runeverything-relay_${goos}_${goarch}${ext}"
   rm -rf "$tmp"
@@ -48,6 +55,7 @@ build_one linux amd64
 build_one linux arm64
 build_one windows amd64
 build_one windows arm64
+build_one windows 386
 
 echo "==> building .deb packages"
 chmod +x "${ROOT}/scripts/build-deb.sh"
@@ -77,8 +85,4 @@ echo
 echo "Artifacts in ${OUT}"
 ls -la "$OUT"
 echo
-echo "Next:"
-echo "  1. Create git tag v${VERSION} and push"
-echo "  2. Upload ${OUT}/* to GitHub Release v${VERSION}"
-echo "  3. Run sync scripts + publish APT Pages if needed"
-echo "  4. Debian/Ubuntu: curl -fsSL .../scripts/install-apt.sh | sudo bash"
+echo "Windows users: download RunEverythingSetup_amd64.exe (or arm64) from the GitHub Release."

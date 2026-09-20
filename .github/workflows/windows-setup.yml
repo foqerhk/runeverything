@@ -1,0 +1,84 @@
+name: Windows Setup
+
+# Cross-compile RunEverythingSetup_*.exe (embed agent) for common Windows arches.
+# Official Go 1.21+ targets Windows 10+; we still ship amd64 / arm64 / 386 for max coverage.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    name: Setup ${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # amd64: typical PCs; arm64: Snapdragon / Arm; 386: 32-bit Windows
+        goarch: [amd64, arm64, 386]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Build Setup.exe
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          chmod +x scripts/build-windows-setup.sh
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            ver="${GITHUB_REF_NAME#v}"
+          else
+            ver="0.0.0-ci.${GITHUB_SHA::7}"
+          fi
+          ./scripts/build-windows-setup.sh "$ver" "$GOARCH"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunEverythingSetup_${{ matrix.goarch }}
+          path: dist/windows/RunEverythingSetup_${{ matrix.goarch }}.exe
+          if-no-files-found: error
+
+  publish:
+    name: Attach to Release
+    needs: setup
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Setup artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: RunEverythingSetup_*
+          path: dist/windows
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la dist/windows/
+
+      - name: Ensure release exists and upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes "Windows Setup build (full assets may follow from Release workflow)." \
+              --verify-tag \
+              dist/windows/RunEverythingSetup_*.exe
+          else
+            gh release upload "$tag" dist/windows/RunEverythingSetup_*.exe --clobber
+          fi

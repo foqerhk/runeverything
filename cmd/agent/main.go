@@ -48,6 +48,10 @@ func main() {
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 			cmdRun()
 			return
+		case "tray":
+			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+			cmdTray()
+			return
 		case "version", "-v", "--version":
 			fmt.Println(version)
 			return
@@ -64,6 +68,7 @@ func printUsage() {
 
 Usage:
   runeverything [run]     Connect to relay /re2, print pairing QR, serve PTY sessions
+  runeverything tray      Windows: system tray agent (QR / autostart / quit)
   runeverything pair      Refresh pairing token and print QR (requires running agent OR local-only offer)
   runeverything status    Show device identity and config
   runeverything version   Print version
