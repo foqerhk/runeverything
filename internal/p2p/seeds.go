@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	// OfficialSeedsURL is mirrored on the product site (best for mainland China).
-	OfficialSeedsURL = "https://intentcomputing.cn/seeds.json"
+	// OfficialSeedsURL is served by getnode (registrar host), China-friendly.
+	OfficialSeedsURL = "https://getnode.intentcomputing.cn/seeds.json"
 	// DefaultSeedsURL is the GitHub Pages copy.
 	DefaultSeedsURL = "https://foqerhk.github.io/runeverything/seeds.json"
 	// FallbackSeedsURL is raw GitHub content (works even if Pages lags).
