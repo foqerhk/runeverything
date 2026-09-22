@@ -58,6 +58,6 @@ go run ./cmd/retest -desktop -relay ws://127.0.0.1:8787/re2 -udp 127.0.0.1:8787 
 
 ## Volunteer relay directory (P2P)
 
-1. Seeds：`docs/seeds.json`（`url` + 可选 `udp`）
+1. Seeds：优先 `https://intentcomputing.cn/seeds.json`，回退 GitHub Pages / `docs/seeds.json`（`url` + 可选 `udp`）
 2. `/v1/peers` gossip；Peer 可带 `udp`
 3. Agent 选最低 ping 的 wss；`udp` 来自 REGISTER_OK / QR
