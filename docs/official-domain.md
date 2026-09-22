@@ -6,9 +6,10 @@
 
 ```
 志愿者 Relay ──POST /v1/enroll──► 官网 Registrar（闭源）──► 专属 join_token（落盘本机）
-            ──POST /v1/claim───► 同上（Bearer=专属 token）──CF DNS──► A（DNS-only）
+            ──POST /v1/claim───► 同上（Bearer=专属 token）──Aliyun/CF DNS──► A（DNS-only）
 家庭 Agent   ──POST /v1/report─► 同上（真实连接失败上报）
-手机 / Agent ──wss://slug.nodes…/re2 + UDP :port──► 直连志愿者
+手机 / Agent ──wss://{slug}.{zone}/re2 + UDP──► 直连志愿者
+             zone = intentcomputing.cn（国内）或 runeverything.online（国外）
 ```
 
 ## 本仓库里有什么
@@ -30,7 +31,7 @@
 ```bash
 export RE_AUTO_DOMAIN=1
 export RE_SHARE_RELAY=1          # 默认就是开；关掉则不会 enroll/claim
-export RE_REGISTRAR_URL=https://registrar.example.com
+export RE_REGISTRAR_URL=https://getnode.intentcomputing.cn
 sudo -E runeverything-relay -auto-domain   # 需开放 80/443
 ```
 
