@@ -1,8 +1,8 @@
 {
   "seeds": [
     {
-      "url": "ws://8.137.32.163:8787/re2",
-      "udp": "8.137.32.163:8787"
+      "url": "wss://8e2cee2dd1.intentcomputing.cn/re2",
+      "udp": "8e2cee2dd1.intentcomputing.cn:8787"
     }
   ]
 }
