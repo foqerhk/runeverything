@@ -7,17 +7,22 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/foqerhk/runeverything/internal/region"
 )
 
 var reportOnce sync.Map // url+reason -> last send unix
 
 // ReportBadAsync best-effort abuse report from home agents / discovery.
-// Set RE_REGISTRAR_URL (public registrar). Optional RE_REPORT=0 to disable.
+// Uses in-region getnode (or RE_REGISTRAR_URL). Optional RE_REPORT=0 to disable.
 func ReportBadAsync(relayURL, reason, detail, reporterID string) {
 	if disabledReport() {
 		return
 	}
 	base := strings.TrimSpace(os.Getenv("RE_REGISTRAR_URL"))
+	if base == "" {
+		base = region.GetnodeBase(context.Background())
+	}
 	if base == "" {
 		return
 	}

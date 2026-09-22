@@ -276,10 +276,11 @@ Agent 运行时会自动防闲置睡眠（macOS `caffeinate`、Windows Away Mode
 | `RE_RELAY` | Agent 连接的 Relay（设置后不再 P2P 发现） | seeds → crawl → 最低 ping |
 | `RE_SHARE_RELAY` | 公网 Relay 是否把自己 gossip 出去 | `1`（`0` 关闭） |
 | `RE_AUTO_DOMAIN` | Relay 自动领取官方子域 + ACME wss | 关闭 |
-| `RE_REGISTRAR_URL` | 官方 Registrar（claim / 滥用上报） | 空 |
+| `RE_REGISTRAR_URL` | 官方 Registrar（claim / 滥用上报） | 默认按地区：`.cn` / `.net` getnode |
 | `RE_JOIN_TOKEN` | 可选；有则跳过自动 enroll | 空（自动领取） |
 | `RE_REPORT` | 家庭端失败是否上报 registrar | `1`（`0` 关） |
-| `RE_SEEDS_URL` | 官方种子列表 JSON | 默认先 `getnode.intentcomputing.cn/seeds.json`，再 Pages / raw GitHub |
+| `RE_REGION` | 强制区域 `cn` / `intl` | 自动检测 |
+| `RE_SEEDS_URL` | 官方种子列表 JSON | 默认按地区 getnode `/seeds.json`（国内不跨境） |
 | `RE_SEEDS` | 逗号分隔种子 URL（覆盖文件） | 空 |
 | `RE_KEEP_AWAKE` | Agent 运行时阻止闲置睡眠 | `1`（`0` 关闭） |
 | `RE_HOME` | 身份与配置目录 | `~/.runeverything` |

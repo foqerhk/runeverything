@@ -10,16 +10,11 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/foqerhk/runeverything/internal/region"
 )
 
 const (
-	// OfficialSeedsURL is served by getnode (registrar host), China-friendly.
-	OfficialSeedsURL = "https://getnode.intentcomputing.cn/seeds.json"
-	// DefaultSeedsURL is the GitHub Pages copy.
-	DefaultSeedsURL = "https://foqerhk.github.io/runeverything/seeds.json"
-	// FallbackSeedsURL is raw GitHub content (works even if Pages lags).
-	FallbackSeedsURL = "https://raw.githubusercontent.com/foqerhk/runeverything/main/docs/seeds.json"
-
 	DefaultGossipInterval = 30 * time.Second
 	DefaultPeerTTL        = 15 * time.Minute
 	MaxCrawlPeers         = 64
@@ -47,6 +42,8 @@ func parseSeedEntry(raw json.RawMessage) (urlStr string, ok bool) {
 }
 
 // SeedURLs returns bootstrap relay URLs (env RE_SEEDS comma-list overrides file URL).
+// Official lists are region-scoped: CN → getnode.intentcomputing.cn only;
+// intl → getnode.intentcomputing.net (plus optional GitHub mirrors). No cross-border fallback.
 func SeedURLs(ctx context.Context) ([]string, error) {
 	if v := strings.TrimSpace(os.Getenv("RE_SEEDS")); v != "" {
 		parts := strings.Split(v, ",")
@@ -67,11 +64,7 @@ func SeedURLs(ctx context.Context) ([]string, error) {
 		}
 		return out, nil
 	}
-	// Prefer the China-friendly official site first, then GitHub Pages / raw.
-	urls := []string{OfficialSeedsURL, DefaultSeedsURL, FallbackSeedsURL}
-	if v := strings.TrimSpace(os.Getenv("RE_SEEDS_URL")); v != "" {
-		urls = []string{v, OfficialSeedsURL, DefaultSeedsURL, FallbackSeedsURL}
-	}
+	urls := region.SeedsURLs(ctx)
 	var last error
 	for _, u := range urls {
 		seeds, err := fetchSeedsFile(ctx, u)
@@ -86,7 +79,7 @@ func SeedURLs(ctx context.Context) ([]string, error) {
 	if last != nil {
 		return nil, last
 	}
-	return nil, fmt.Errorf("no seeds available")
+	return nil, fmt.Errorf("no seeds available (region=%s)", region.Detect(ctx))
 }
 
 func fetchSeedsFile(ctx context.Context, fileURL string) ([]string, error) {
@@ -111,7 +104,6 @@ func fetchSeedsFile(ctx context.Context, fileURL string) ([]string, error) {
 	body = bytes.TrimSpace(body)
 	var sf SeedsFile
 	if err := json.Unmarshal(body, &sf); err != nil {
-		// also accept bare string array
 		var arr []json.RawMessage
 		if err2 := json.Unmarshal(body, &arr); err2 != nil {
 			return nil, err
