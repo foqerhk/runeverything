@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	// DefaultSeedsURL is the official bootstrap list maintained on GitHub Pages.
+	// OfficialSeedsURL is mirrored on the product site (best for mainland China).
+	OfficialSeedsURL = "https://intentcomputing.cn/seeds.json"
+	// DefaultSeedsURL is the GitHub Pages copy.
 	DefaultSeedsURL = "https://foqerhk.github.io/runeverything/seeds.json"
 	// FallbackSeedsURL is raw GitHub content (works even if Pages lags).
 	FallbackSeedsURL = "https://raw.githubusercontent.com/foqerhk/runeverything/main/docs/seeds.json"
@@ -65,9 +67,10 @@ func SeedURLs(ctx context.Context) ([]string, error) {
 		}
 		return out, nil
 	}
-	urls := []string{DefaultSeedsURL, FallbackSeedsURL}
+	// Prefer the China-friendly official site first, then GitHub Pages / raw.
+	urls := []string{OfficialSeedsURL, DefaultSeedsURL, FallbackSeedsURL}
 	if v := strings.TrimSpace(os.Getenv("RE_SEEDS_URL")); v != "" {
-		urls = []string{v, DefaultSeedsURL, FallbackSeedsURL}
+		urls = []string{v, OfficialSeedsURL, DefaultSeedsURL, FallbackSeedsURL}
 	}
 	var last error
 	for _, u := range urls {
