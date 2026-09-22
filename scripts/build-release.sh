@@ -22,12 +22,15 @@ build_one() {
   [[ "$goos" == "windows" ]] && ext=".exe"
   local tmp
   tmp="$(mktemp -d)"
-  echo "==> building ${name}"
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+  # Desktop capture on macOS needs Apple frameworks (CGO).
+  local cgo=0
+  [[ "$goos" == "darwin" ]] && cgo=1
+  echo "==> building ${name} (CGO_ENABLED=${cgo})"
+  CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
     -o "${tmp}/runeverything${ext}" "${ROOT}/cmd/agent"
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
     -o "${tmp}/runeverything-relay${ext}" "${ROOT}/cmd/relay"
-  GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
     -o "${tmp}/runeverything-directory${ext}" "${ROOT}/cmd/directory"
 
   if [[ "$goos" == "windows" ]]; then
