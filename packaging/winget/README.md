@@ -6,11 +6,6 @@ under `manifests/f/Foqerhk/RunEverything/<version>/`.
 Until that PR is merged, Windows users can use:
 
 ```powershell
-# Scoop
-scoop bucket add runeverything https://github.com/foqerhk/scoop-runeverything
-scoop install runeverything
-
-# Or one-liner script
 irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
 ```
 

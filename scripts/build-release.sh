@@ -49,8 +49,13 @@ build_one() {
 }
 
 cd "$ROOT"
-build_one darwin amd64
-build_one darwin arm64
+# Darwin needs Apple CGO — skip on Linux CI; use scripts/build-darwin.sh / macos runners.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  build_one darwin amd64
+  build_one darwin arm64
+else
+  echo "==> skip darwin cross-compile on $(uname -s) (use macOS runner / build-darwin.sh)"
+fi
 build_one linux amd64
 build_one linux arm64
 build_one windows amd64

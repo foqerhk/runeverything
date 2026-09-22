@@ -35,19 +35,13 @@ KoKo (手机)  ←── wss 信令 + UDP 画面/键鼠 ──→  Relay  ←─
 
 系统要求：**Windows 10 / 11**（及对应 Server）。当前 Go 工具链自 1.21 起**不再支持 Windows 7 / 8**。
 
-也可继续用 PowerShell / Scoop / winget / Chocolatey（见下文）。
+也可继续用 PowerShell / winget / Chocolatey（见下文）。
 
 ### macOS
 
 ```bash
-brew install foqerhk/tap/runeverything
-```
-
-安装后配对并（可选）开机自启：
-
-```bash
+curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.sh | sh
 runeverything pair
-brew services start runeverything
 ```
 
 ### Linux（推荐：自动识别发行版）
@@ -129,15 +123,7 @@ $env:RE_RELAY = "wss://your-relay.example/re2"
 irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
 ```
 
-#### 2）Scoop
-
-```powershell
-scoop bucket add runeverything https://github.com/foqerhk/scoop-runeverything
-scoop install runeverything
-runeverything pair
-```
-
-#### 3）winget（用仓库内清单，无需等官方源收录）
+#### 2）winget（用仓库内清单，无需等官方源收录）
 
 需已安装 [App Installer / winget](https://aka.ms/getwinget)：
 
@@ -151,7 +137,7 @@ irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install
 winget install --manifest .\packaging\winget\Foqerhk.RunEverything\0.1.0
 ```
 
-#### 4）Chocolatey
+#### 3）Chocolatey
 
 ```powershell
 choco install runeverything -y --source "https://github.com/foqerhk/runeverything/releases/download/v0.1.0/"
@@ -246,7 +232,7 @@ runeverything status
 
 | 系统 | 方式 |
 |------|------|
-| macOS | `brew services start runeverything` 或 install.sh 的 launchd |
+| macOS | install.sh 写入的 launchd（若启用） |
 | Linux 桌面 | `systemctl --user enable --now runeverything`（安装脚本会尝试 `loginctl enable-linger`） |
 | Windows | 安装脚本注册登录计划任务 |
 
@@ -326,7 +312,7 @@ go build -o bin/retest ./cmd/retest
 - [架构说明](docs/architecture.md)
 - [协议规范（RE2）](docs/protocol-v2.md)
 - [KoKo 对齐交接](docs/koko-re2-handoff.md)
-- [分发渠道（brew / apt / rpm / Scoop…）](docs/distribution.md)
+- [分发渠道（install.sh / apt / rpm / winget…）](docs/distribution.md)
 
 ## 许可证
 
