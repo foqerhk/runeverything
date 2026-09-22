@@ -135,7 +135,7 @@ nupkg 由 `scripts/sync-chocolatey.sh` 生成并随 Release 发布。
 
 ## 公益中继（P2P）
 
-- 官方种子：[`docs/seeds.json`](seeds.json)（同步到 GitHub Pages `/seeds.json`）。
+- 官方种子：[`docs/seeds.json`](seeds.json)；站点镜像 `https://intentcomputing.cn/seeds.json`（国内优先），并同步 GitHub Pages。
 - 节点协议：`GET/POST /v1/peers`；志愿者默认 gossip，关闭：`RE_SHARE_RELAY=0`。
 - 家庭 Agent：seeds → crawl → `/healthz` ping → 选最低延迟。
 - **免责**：志愿者中继只提供尽力连通，不提供保密保证。
