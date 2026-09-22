@@ -1,5 +1,7 @@
 # 官方域名：客户端约定（Registrar 服务端闭源）
 
+> 国内外分流见 [`regions.md`](regions.md)。
+
 志愿者**不必自备域名**。官方在**官网单独部署**闭源 Registrar（不进入本仓库 / 不公开 GitHub）：发放子域、写 Cloudflare **DNS-only（灰云关闭）** A 记录、主动巡检与剔除。本仓库只保留**客户端**：志愿者 `claim`、家庭用户 `report`、Relay ACME。
 
 > **RE2.1 / REUDP**：画面与键鼠走 **UDP**。Cloudflare 代理模式无法转发 UDP，因此节点 A 记录必须 **DNS-only**；`wss` 由志愿者本机 ACME 提供证书。
@@ -31,7 +33,8 @@
 ```bash
 export RE_AUTO_DOMAIN=1
 export RE_SHARE_RELAY=1          # 默认就是开；关掉则不会 enroll/claim
-export RE_REGISTRAR_URL=https://getnode.intentcomputing.cn
+# 可不设：客户端按地区自动选 getnode.intentcomputing.cn 或 .net
+export RE_REGISTRAR_URL=https://getnode.intentcomputing.cn   # 可选强制
 sudo -E runeverything-relay -auto-domain   # 需开放 80/443
 ```
 

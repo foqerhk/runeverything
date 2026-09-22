@@ -11,6 +11,7 @@ import (
 
 	"github.com/foqerhk/runeverything/internal/identity"
 	"github.com/foqerhk/runeverything/internal/netutil"
+	"github.com/foqerhk/runeverything/internal/region"
 )
 
 // AutoClaimEnv enables automatic hostname + DNS via the official registrar.
@@ -24,7 +25,10 @@ func AutoClaimEnabled() bool {
 func ClaimPublicWSS(ctx context.Context) (wssURL, hostname string, err error) {
 	base := strings.TrimSpace(os.Getenv("RE_REGISTRAR_URL"))
 	if base == "" {
-		return "", "", fmt.Errorf("RE_REGISTRAR_URL required when RE_AUTO_DOMAIN=1")
+		base = region.GetnodeBase(ctx)
+	}
+	if base == "" {
+		return "", "", fmt.Errorf("registrar URL empty")
 	}
 	ip := netutil.DetectPublicHost(ctx)
 	if ip == "" || !ValidPublicIP(ip) {
