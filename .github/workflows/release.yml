@@ -9,56 +9,139 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  # macOS desktop agent needs CGO + Apple frameworks — build on macOS runners.
+  darwin:
+    name: Darwin ${{ matrix.goarch }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [arm64, amd64]
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.x"
           cache: true
-
-      - name: Install zip
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip
-
-      - name: Build release assets
+      - name: Build darwin tarball
+        env:
+          GOARCH: ${{ matrix.goarch }}
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          chmod +x scripts/build-release.sh scripts/build-windows-setup.sh
-          ./scripts/build-release.sh "$ver"
+          chmod +x scripts/build-darwin.sh
+          ./scripts/build-darwin.sh "$ver" "$GOARCH"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-${{ matrix.goarch }}
+          path: dist/${{ github.ref_name }}/runeverything_darwin_${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error
 
+  # Linux + Windows (Windows Setup also published by windows-setup.yml).
+  linux-windows:
+    name: Linux/Windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - name: Install zip
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip
+      - name: Build linux + windows assets
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#v}"
+          export CGO_ENABLED=0
+          OUT="dist/v${ver}"
+          mkdir -p "$OUT"
+          LDFLAGS="-s -w -X main.version=${ver}"
+          build_one() {
+            local goos="$1" goarch="$2" ext="" tmp name
+            [[ "$goos" == "windows" ]] && ext=".exe"
+            name="runeverything_${goos}_${goarch}"
+            tmp="$(mktemp -d)"
+            echo "==> ${name}"
+            GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+              -o "${tmp}/runeverything${ext}" ./cmd/agent
+            GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+              -o "${tmp}/runeverything-relay${ext}" ./cmd/relay
+            GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$LDFLAGS" \
+              -o "${tmp}/runeverything-directory${ext}" ./cmd/directory
+            if [[ "$goos" == "windows" ]]; then
+              mkdir -p cmd/winsetup/embedded
+              cp "${tmp}/runeverything${ext}" cmd/winsetup/embedded/runeverything.exe
+              GOOS=windows GOARCH="$goarch" go build -trimpath -tags embedagent \
+                -ldflags "${LDFLAGS} -H windowsgui" \
+                -o "${OUT}/RunEverythingSetup_${goarch}.exe" ./cmd/winsetup
+              (cd "$tmp" && zip -q "${OUT}/${name}.zip" "runeverything${ext}" "runeverything-relay${ext}" "runeverything-directory${ext}")
+            else
+              tar -C "$tmp" -czf "${OUT}/${name}.tar.gz" "runeverything${ext}" "runeverything-relay${ext}" "runeverything-directory${ext}"
+            fi
+            cp "${tmp}/runeverything${ext}" "${OUT}/${name}${ext}"
+            rm -rf "$tmp"
+          }
+          build_one linux amd64
+          build_one linux arm64
+          build_one windows amd64
+          build_one windows arm64
+          build_one windows 386
+          chmod +x scripts/build-deb.sh scripts/build-rpm.sh scripts/build-apt-repo.sh || true
+          ./scripts/build-deb.sh "$ver" || echo "deb skipped"
+          ./scripts/build-rpm.sh "$ver" || echo "rpm skipped"
+          ./scripts/build-apt-repo.sh "$ver" || echo "apt repo skipped"
+          (cd "$OUT" && (sha256sum ./* > SHA256SUMS 2>/dev/null || shasum -a 256 ./* > SHA256SUMS))
+          ls -la "$OUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-windows
+          path: dist/${{ github.ref_name }}/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [darwin, linux-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/all
+          merge-multiple: true
+      - name: Flatten artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          find dist/all -type f -exec cp -n {} dist/release/ \;
+          ls -la dist/release
       - name: Write release notes
         run: |
           cat > /tmp/release-notes.md <<'EOF'
-          ## Windows
+          ## Install
 
-          Download the installer for your PC (Windows **10 / 11** recommended):
+          ### macOS
+          ```
+          curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.sh | sh
+          ```
 
-          | File | Arch |
-          |------|------|
-          | `RunEverythingSetup_amd64.exe` | 64-bit Intel/AMD (most PCs) |
-          | `RunEverythingSetup_arm64.exe` | Windows on Arm |
-          | `RunEverythingSetup_386.exe` | 32-bit Windows |
+          ### Windows
+          Download `RunEverythingSetup_amd64.exe` (or arm64 / 386), double-click to install.
 
-          Double-click Setup → tray icon → **Show pairing QR**.
-
-          > Go 1.21+ no longer supports Windows 7 / 8. Please use Windows 10 or newer.
+          Requires **Windows 10 / 11**. Windows 7 / 8 are not supported by Go 1.21+.
           EOF
-          # strip leading spaces from heredoc indent
           sed -i 's/^          //' /tmp/release-notes.md
-
-      - name: Create GitHub Release
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ver="${GITHUB_REF_NAME#v}"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "dist/v${ver}"/* --clobber
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/release/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "dist/v${ver}"/* \
-              --title "$GITHUB_REF_NAME" \
+            gh release create "$tag" dist/release/* \
+              --title "$tag" \
               --notes-file /tmp/release-notes.md \
               --verify-tag
           fi

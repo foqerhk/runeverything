@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_BASE="${RE_SCRIPT_BASE:-https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "This installer is for Linux. On macOS use Homebrew; on Windows use Scoop." >&2
+  echo "This installer is for Linux. On macOS/Windows use scripts/install.sh or install.ps1." >&2
   exit 1
 fi
 

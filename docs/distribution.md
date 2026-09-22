@@ -6,21 +6,20 @@
 
 | 平台 | 推荐安装方式 | 备选 |
 |------|----------------|------|
-| macOS | `brew install foqerhk/tap/runeverything` | `install.sh` |
+| macOS | `install.sh` | |
 | Linux（自动识别） | `curl …/install-linux.sh \| bash` | 见下表 |
 | Debian / Ubuntu | `ppa:foqerhk/runeverything` / `install-apt.sh` | GitHub Pages APT |
 | Fedora / RHEL / Rocky | `install-rpm.sh`（dnf/yum） | |
 | openSUSE | `install-rpm.sh`（zypper） | |
 | Arch / Manjaro | `install-arch.sh` / AUR PKGBUILD | |
 | Alpine | `install-apk.sh` / APKBUILD | |
-| Windows | PowerShell 一键 `install.ps1` | Scoop / winget / Chocolatey |
+| Windows | Setup 安装包 / `install.ps1` | winget / Chocolatey |
 
-## macOS — Homebrew
+## macOS
 
 ```bash
-brew install foqerhk/tap/runeverything
+curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.sh | sh
 runeverything pair
-brew services start runeverything
 ```
 
 ## Linux — 一键自动识别
@@ -112,13 +111,6 @@ curl -fsSL https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/
 irm https://raw.githubusercontent.com/foqerhk/runeverything/main/scripts/install.ps1 | iex
 ```
 
-### Scoop
-
-```powershell
-scoop bucket add runeverything https://github.com/foqerhk/scoop-runeverything
-scoop install runeverything
-```
-
 ### winget（仓库内清单）
 
 ```powershell
@@ -144,14 +136,12 @@ nupkg 由 `scripts/sync-chocolatey.sh` 生成并随 Release 发布。
 
 ```bash
 ./scripts/build-release.sh 0.1.0          # 含 tar/zip/.deb/.rpm + apt repo
-./scripts/sync-homebrew-formula.sh 0.1.0
-./scripts/sync-scoop-manifest.sh 0.1.0
 ./scripts/sync-winget-manifest.sh 0.1.0
 ./scripts/sync-chocolatey.sh 0.1.0
 ./scripts/sync-aur-pkgbuild.sh 0.1.0
 ./scripts/sync-alpine-apkbuild.sh 0.1.0
 gh release create v0.1.0 dist/v0.1.0/* --title "v0.1.0"
-# 推送 homebrew-tap / scoop-runeverything / gh-pages(apt)
+# 可选：推送 gh-pages(apt)
 ```
 
 ## 资源命名
