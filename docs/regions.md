@@ -19,6 +19,6 @@ RunEverything **一套客户端**，按运行环境自动选择区域入口；**
 ## 运维侧
 
 - **国内**：已在 `8.137.32.163` 部署 CN getnode + 管理台 + 官网  
-- **国外**：待提供服务器后，部署同一套闭源 registrar（管理台、seeds 同步、ACME），zone 配 `runeverything.online`，域名 `getnode.intentcomputing.net`
+- **国外**：已在 `208.113.214.106` 部署 Intl getnode + 管理台；zone 配 `runeverything.online`，域名 `getnode.intentcomputing.net`（SSH `34417`）
 
 两套 state / admin / seeds **互不同步**，避免节点与用户元数据跨境。
