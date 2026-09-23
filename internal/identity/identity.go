@@ -32,6 +32,13 @@ type Config struct {
 	ShareRelay *bool `json:"share_relay,omitempty"`
 	// RelayManual means the user pinned relay_url (do not auto-discover).
 	RelayManual bool `json:"relay_manual,omitempty"`
+	// IPEchoCN / IPEchoIntl override built-in public-IP echo endpoints (plain-text IP).
+	// Env RE_IP_ECHO_CN / RE_IP_ECHO_INTL override these when set.
+	IPEchoCN   []string `json:"ip_echo_cn,omitempty"`
+	IPEchoIntl []string `json:"ip_echo_intl,omitempty"`
+	// GeoURL overrides the country lookup used for region detection (ip-api JSON shape).
+	// Env RE_GEO_URL overrides this when set. Force region with RE_REGION=cn|intl.
+	GeoURL string `json:"geo_url,omitempty"`
 }
 
 func HomeDir() (string, error) {

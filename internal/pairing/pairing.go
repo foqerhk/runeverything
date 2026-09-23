@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/foqerhk/runeverything/internal/auth"
+	"github.com/foqerhk/runeverything/internal/i18n"
 	"github.com/foqerhk/runeverything/internal/protocol"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -55,24 +56,24 @@ func PrintQR(p *protocol.PairingPayload) error {
 		return err
 	}
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "=== RunEverything Pairing ===")
-	fmt.Fprintf(os.Stdout, "Device: %s (%s)\n", p.Name, p.DeviceID)
-	fmt.Fprintf(os.Stdout, "Relay:  %s\n", p.Relay)
+	fmt.Fprintln(os.Stdout, i18n.T("pair.title"))
+	fmt.Fprintln(os.Stdout, i18n.T("pair.device", p.Name, p.DeviceID))
+	fmt.Fprintln(os.Stdout, i18n.T("pair.relay", p.Relay))
 	if p.UDP != "" {
-		fmt.Fprintf(os.Stdout, "UDP:    %s\n", p.UDP)
+		fmt.Fprintln(os.Stdout, i18n.T("pair.udp", p.UDP))
 	}
-	fmt.Fprintf(os.Stdout, "Proto:  v%d\n", p.V)
+	fmt.Fprintln(os.Stdout, i18n.T("pair.proto", p.V))
 	if p.NoisePub != "" {
-		fmt.Fprintf(os.Stdout, "Noise:  %s…\n", trimPub(p.NoisePub))
+		fmt.Fprintln(os.Stdout, i18n.T("pair.noise", trimPub(p.NoisePub)))
 	}
-	fmt.Fprintf(os.Stdout, "Expires: %s\n", time.Unix(p.ExpiresAt, 0).Format(time.RFC3339))
+	fmt.Fprintln(os.Stdout, i18n.T("pair.expires", time.Unix(p.ExpiresAt, 0).Format(time.RFC3339)))
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, qr.ToSmallString(false))
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "JSON payload:")
+	fmt.Fprintln(os.Stdout, i18n.T("pair.json"))
 	fmt.Fprintln(os.Stdout, content)
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "Deep link:")
+	fmt.Fprintln(os.Stdout, i18n.T("pair.deeplink"))
 	fmt.Fprintln(os.Stdout, p.DeepLink())
 	fmt.Fprintln(os.Stdout)
 	return nil

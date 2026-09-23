@@ -1,9 +1,10 @@
 package keepalive
 
 import (
-	"log"
 	"os"
 	"strings"
+
+	"github.com/foqerhk/runeverything/internal/i18n"
 )
 
 // Start prevents the machine from idling to sleep while the agent runs.
@@ -14,10 +15,10 @@ func Start() (stop func()) {
 	}
 	stop, err := platformStart()
 	if err != nil {
-		log.Printf("keepalive: %v (machine may still sleep)", err)
+		i18n.Log("log.keepalive_fail", err)
 		return func() {}
 	}
-	log.Printf("keepalive: preventing idle sleep (set RE_KEEP_AWAKE=0 to disable)")
+	i18n.Log("log.keepalive")
 	return stop
 }
 

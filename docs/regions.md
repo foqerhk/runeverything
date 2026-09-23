@@ -11,10 +11,31 @@ RunEverything **一套客户端**，按运行环境自动选择区域入口；**
 
 ## 客户端行为
 
-1. 识别区域（`RE_REGION=cn|intl` 可强制）：时区/语言启发式 → 公网 IP 国家码 → 默认 intl  
+1. 识别区域（`RE_REGION=cn|intl` 可强制）：时区/语言启发式 → 公网 IP 国家码（`RE_GEO_URL` / `geo_url`）→ 默认 intl  
 2. 国内：**只**访问 `getnode.intentcomputing.cn`（enroll / claim / report / seeds）  
 3. 国外：**只**访问 `getnode.intentcomputing.net`  
-4. 显式 `RE_REGISTRAR_URL` / `RE_SEEDS_URL` / `RE_SEEDS` 仍可覆盖（运维调试）
+4. 显式 `RE_REGISTRAR_URL` / `RE_SEEDS_URL` / `RE_SEEDS` 仍可覆盖（运维调试）  
+5. **界面/日志语言**：系统中文（含繁体）→ 简体中文；其他 → 英文。可用 `RE_LANG=zh|en` 强制
+
+### NAT / 公网判定与出口 IP 接口
+
+是否在 NAT 后：出口公网 IP 是否绑在本机网卡上（与 OS 无关）。  
+出口 IP 探测按区域优先、另一区域兜底：
+
+| 区域优先 | 内置默认 |
+|----------|----------|
+| 国内 | `https://ip.3322.net`、`https://myip.ipip.net/s` |
+| 国外 | `https://api.ipify.org`、`https://ifconfig.me/ip` |
+
+可更换（优先级：环境变量 > `config.json` > 内置）：
+
+```bash
+runeverything config set-ip-echo --cn URL1,URL2 --intl URL3,URL4
+runeverything config set-geo-url 'http://ip-api.com/json/?fields=status,countryCode'
+# 或：RE_IP_ECHO_CN / RE_IP_ECHO_INTL / RE_GEO_URL
+```
+
+`RE_GEO_URL` 需返回 JSON：`{"status":"success","countryCode":"CN"}`（与 ip-api.com `fields=status,countryCode` 兼容）。
 
 ## 运维侧
 

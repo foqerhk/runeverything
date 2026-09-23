@@ -15,6 +15,7 @@ import (
 	"github.com/foqerhk/runeverything/internal/deskbridge"
 	"github.com/foqerhk/runeverything/internal/desktop"
 	"github.com/foqerhk/runeverything/internal/holepunch"
+	"github.com/foqerhk/runeverything/internal/i18n"
 	"github.com/foqerhk/runeverything/internal/re2"
 	"github.com/foqerhk/runeverything/internal/reudp"
 )
@@ -42,7 +43,7 @@ func (a *Agent) startUDP(udpHostPort string) error {
 		_ = ep.Close()
 		return err
 	}
-	log.Printf("reudp associated device=%s hint=%s", ok.DeviceID, ok.UDPHint)
+	i18n.Log("log.reudp_associated", ok.DeviceID, ok.UDPHint)
 	a.mu.Lock()
 	if a.udpEP != nil {
 		_ = a.udpEP.Close()
@@ -64,7 +65,7 @@ func (a *Agent) udpReadLoop() {
 			return
 		}
 		if idle > 0 && !last.IsZero() && time.Since(last) > idle {
-			log.Printf("session idle timeout (%s)", idle)
+			i18n.Log("log.session_idle", idle)
 			audit.Log("session_idle_timeout", a.id.DeviceID)
 			a.closeDesktop()
 			a.re2Sess = nil
@@ -74,7 +75,7 @@ func (a *Agent) udpReadLoop() {
 			if ne, ok := err.(interface{ Timeout() bool }); ok && ne.Timeout() {
 				continue
 			}
-			log.Printf("reudp recv: %v", err)
+			i18n.Log("log.reudp_recv", err)
 			return
 		}
 		if err := a.handleUDPPayload(payload); err != nil {
@@ -102,7 +103,7 @@ func (a *Agent) handleUDPPayload(payload []byte) error {
 		a.useUDP = true
 		a.touchActivity()
 		audit.Log("noise_ok", "udp")
-		log.Printf("re2 noise session established over UDP device=%s", a.id.DeviceID)
+		i18n.Log("log.re2_noise_udp", a.id.DeviceID)
 		return nil
 	}
 	a.touchActivity()
@@ -269,7 +270,7 @@ func (a *Agent) checkDesktopAccess(password string) error {
 	}
 	confirm := os.Getenv("RE_PAIR_CONFIRM")
 	if confirm == "1" || confirm == "true" || confirm == "yes" {
-		if !desktop.ConfirmLocal("Allow remote desktop session?", 60*time.Second) {
+		if !desktop.ConfirmLocal(i18n.T("desktop.confirm"), 60*time.Second) {
 			return errString("remote desktop denied on agent")
 		}
 	}

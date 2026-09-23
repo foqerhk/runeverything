@@ -24,11 +24,16 @@ const (
 	GetnodeCN = "https://getnode.intentcomputing.cn"
 	// GetnodeIntl is the international registrar + seeds host.
 	GetnodeIntl = "https://getnode.intentcomputing.net"
+
+	// DefaultGeoURL returns JSON {status,countryCode} (ip-api.com compatible).
+	DefaultGeoURL = "http://ip-api.com/json/?fields=status,countryCode"
 )
 
 var (
 	detectOnce sync.Once
 	detected   string
+
+	geoURLOverride string
 )
 
 // Override returns RE_REGION if set to cn/intl.
@@ -42,6 +47,24 @@ func Override() string {
 	default:
 		return ""
 	}
+}
+
+// SetGeoURLOverride installs config.json geo lookup URL (empty clears).
+// Env RE_GEO_URL still wins when set.
+func SetGeoURLOverride(u string) {
+	geoURLOverride = strings.TrimSpace(u)
+}
+
+// GeoURL returns the country-lookup endpoint (env > config > default).
+// Expected JSON: {"status":"success","countryCode":"CN"} (ip-api.com fields subset).
+func GeoURL() string {
+	if v := strings.TrimSpace(os.Getenv("RE_GEO_URL")); v != "" {
+		return v
+	}
+	if geoURLOverride != "" {
+		return geoURLOverride
+	}
+	return DefaultGeoURL
 }
 
 // Detect returns cn or intl. Result is cached for the process lifetime.
@@ -93,12 +116,15 @@ func looksLikeMainlandLocal() bool {
 }
 
 func lookupIPCountry(ctx context.Context) (isCN bool, err error) {
-	// Public IP via a short, fields-limited lookup. Used only for region class.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://ip-api.com/json/?fields=status,countryCode", nil)
+	geo := GeoURL()
+	if geo == "" {
+		return false, net.ErrClosed
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, geo, nil)
 	if err != nil {
 		return false, err
 	}
+	req.Header.Set("User-Agent", "runeverything/0.2")
 	client := &http.Client{Timeout: 3 * time.Second}
 	res, err := client.Do(req)
 	if err != nil {

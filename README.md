@@ -191,10 +191,11 @@ go run ./cmd/retest -relay ws://127.0.0.1:8787/re2 -device … -token … -noise
 
 #### 公益中继说明（必读）
 
-- 官方只在 GitHub 维护**初始种子列表**（`docs/seeds.json` → Pages `/seeds.json`）；其余节点靠 P2P 互相交换地址发现。
+- 官方按地区在 getnode 维护**初始种子列表**（`/seeds.json`）；其余节点靠 P2P 互相交换地址发现。国外可另用 GitHub 镜像作软兜底。
 - 志愿者贡献的是**连通性 / 带宽**；中继**不能**解密画面/键鼠/PTY（仅见密文）。
 - 谁能操作你的电脑，仍只取决于谁扫了你的配对码。
-- 种子 URL：`RE_SEEDS_URL`（默认 Pages + raw GitHub）；或 `RE_SEEDS=wss://a/re2,wss://b/re2` 直接指定。
+- 种子 URL：`RE_SEEDS_URL`（默认本区 getnode）；或 `RE_SEEDS=wss://a/re2,wss://b/re2` 直接指定。
+- 出口 IP / 地区判定接口可自换：`runeverything config`（见上文）。
 
 本地自测：
 
@@ -250,8 +251,22 @@ Agent 运行时会自动防闲置睡眠（macOS `caffeinate`、Windows Away Mode
 |------|------|
 | `runeverything` / `runeverything run` | 连接 Relay，常驻并提供远程会话 |
 | `runeverything pair` | 刷新配对令牌并打印二维码 |
-| `runeverything status` | 显示 device_id、Relay、配置路径 |
+| `runeverything status` | 显示 device_id、Relay、NAT、配置路径 |
+| `runeverything config` | 查看 / 更换公网 IP 检测与地区判定接口 |
 | `runeverything version` | 打印版本号 |
+
+自定义出口 IP / 地区接口（内置接口停用时可换）：
+
+```bash
+runeverything config show
+runeverything config set-ip-echo \
+  --cn https://ip.3322.net,https://myip.ipip.net/s \
+  --intl https://api.ipify.org,https://ifconfig.me/ip
+runeverything config set-geo-url 'http://ip-api.com/json/?fields=status,countryCode'
+runeverything config reset-endpoints   # 清回内置默认
+```
+
+优先级：**环境变量 > `config.json` > 内置默认**。
 
 ### 配置说明
 
@@ -259,17 +274,29 @@ Agent 运行时会自动防闲置睡眠（macOS `caffeinate`、Windows Away Mode
 
 | 环境变量 | 说明 | 默认 |
 |----------|------|------|
-| `RE_RELAY` | Agent 连接的 Relay（设置后不再 P2P 发现） | seeds → crawl → 最低 ping |
+| `RE_RELAY` | Agent 连接的 Relay（设置后不再 P2P 发现） | NAT 后：seeds → crawl → 最低 ping；公网直连：本地 relay |
 | `RE_SHARE_RELAY` | 公网 Relay 是否把自己 gossip 出去 | `1`（`0` 关闭） |
 | `RE_AUTO_DOMAIN` | Relay 自动领取官方子域 + ACME wss | 关闭 |
 | `RE_REGISTRAR_URL` | 官方 Registrar（claim / 滥用上报） | 默认按地区：`.cn` / `.net` getnode |
 | `RE_JOIN_TOKEN` | 可选；有则跳过自动 enroll | 空（自动领取） |
 | `RE_REPORT` | 家庭端失败是否上报 registrar | `1`（`0` 关） |
-| `RE_REGION` | 强制区域 `cn` / `intl` | 自动检测 |
+| `RE_REGION` | 强制区域 `cn` / `intl`（跳过地理 API） | 自动检测 |
+| `RE_GEO_URL` | 国家码 JSON API（`status`+`countryCode`） | `http://ip-api.com/json/?fields=status,countryCode` |
+| `RE_IP_ECHO_CN` | 国内优先的出口 IP 检测 URL（逗号分隔，纯文本 IP） | `ip.3322.net` + `myip.ipip.net/s` |
+| `RE_IP_ECHO_INTL` | 国外优先的出口 IP 检测 URL（逗号分隔） | `api.ipify.org` + `ifconfig.me/ip` |
 | `RE_SEEDS_URL` | 官方种子列表 JSON | 默认按地区 getnode `/seeds.json`（国内不跨境） |
 | `RE_SEEDS` | 逗号分隔种子 URL（覆盖文件） | 空 |
 | `RE_KEEP_AWAKE` | Agent 运行时阻止闲置睡眠 | `1`（`0` 关闭） |
 | `RE_HOME` | 身份与配置目录 | `~/.runeverything` |
+| `RE_LANG` | 强制界面/日志语言 `zh` / `en`（`zh-TW` 等繁体也用简体） | 跟随系统语言 |
+
+### 语言
+
+Agent 文案与日志按系统语言自动切换：
+
+- 系统为中文（简体/繁体，含 `zh_CN` / `zh_TW` / `zh_HK`，Windows 中文 UI）→ **简体中文**
+- 其他语言 → **英文**
+- 可用 `RE_LANG=zh` 或 `RE_LANG=en` 强制覆盖
 
 `config.json` 示例：
 
@@ -278,7 +305,10 @@ Agent 运行时会自动防闲置睡眠（macOS `caffeinate`、Windows Away Mode
   "relay_url": "wss://your-relay.example/re2",
   "public_relay": "wss://your-relay.example/re2",
   "relay_manual": true,
-  "share_relay": false
+  "share_relay": false,
+  "ip_echo_cn": ["https://ip.3322.net", "https://myip.ipip.net/s"],
+  "ip_echo_intl": ["https://api.ipify.org", "https://ifconfig.me/ip"],
+  "geo_url": "http://ip-api.com/json/?fields=status,countryCode"
 }
 ```
 

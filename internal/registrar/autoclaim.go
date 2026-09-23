@@ -30,9 +30,9 @@ func ClaimPublicWSS(ctx context.Context) (wssURL, hostname string, err error) {
 	if base == "" {
 		return "", "", fmt.Errorf("registrar URL empty")
 	}
-	ip := netutil.DetectPublicHost(ctx)
-	if ip == "" || !ValidPublicIP(ip) {
-		return "", "", fmt.Errorf("could not detect public IP for DNS claim")
+	ip, ok := netutil.DirectPublicIP(ctx)
+	if !ok || ip == "" || !ValidPublicIP(ip) {
+		return "", "", fmt.Errorf("host is behind NAT or has no direct public IP; DNS claim requires a non-NAT public address")
 	}
 	nodeID := ""
 	if id, e := identity.LoadOrCreate(); e == nil {

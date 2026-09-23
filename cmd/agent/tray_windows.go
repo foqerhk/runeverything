@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/foqerhk/runeverything/internal/desktop"
+	"github.com/foqerhk/runeverything/internal/i18n"
 	"github.com/foqerhk/runeverything/internal/identity"
 	"github.com/foqerhk/runeverything/internal/keepalive"
 	"github.com/foqerhk/runeverything/internal/pairing"
@@ -29,21 +30,21 @@ func onTrayExit() {}
 func onTrayReady() {
 	systray.SetIcon(trayIconICO)
 	systray.SetTitle("RunEverything")
-	systray.SetTooltip("RunEverything Agent")
+	systray.SetTooltip(i18n.T("tray.tooltip"))
 
-	mQR := systray.AddMenuItem("Show pairing QR", "Open QR code image")
-	mCopy := systray.AddMenuItem("Copy pair link", "Copy deep link to clipboard")
-	mFolder := systray.AddMenuItem("Open data folder", "Open ~/.runeverything")
+	mQR := systray.AddMenuItem(i18n.T("tray.show_qr"), i18n.T("tray.show_qr_tip"))
+	mCopy := systray.AddMenuItem(i18n.T("tray.copy_link"), i18n.T("tray.copy_link_tip"))
+	mFolder := systray.AddMenuItem(i18n.T("tray.open_folder"), i18n.T("tray.open_folder_tip"))
 	systray.AddSeparator()
-	mAuto := systray.AddMenuItemCheckbox("Start with Windows", "Logon scheduled task", winutil.LogonTaskExists())
+	mAuto := systray.AddMenuItemCheckbox(i18n.T("tray.start_windows"), i18n.T("tray.start_windows_tip"), winutil.LogonTaskExists())
 	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("Quit", "Stop agent")
+	mQuit := systray.AddMenuItem(i18n.T("tray.quit"), i18n.T("tray.quit_tip"))
 
 	agent, stopAwake, errCh := startTrayAgent()
 	if agent == nil {
-		systray.SetTooltip("RunEverything (failed to start)")
+		systray.SetTooltip(i18n.T("tray.tooltip_failed"))
 	} else {
-		systray.SetTooltip("RunEverything — running")
+		systray.SetTooltip(i18n.T("tray.tooltip_running"))
 		_ = refreshPairSilent(agent)
 	}
 
@@ -52,28 +53,28 @@ func onTrayReady() {
 			select {
 			case <-mQR.ClickedCh:
 				if agent == nil {
-					winutil.NotifyBalloon("RunEverything", "Agent is not running")
+					winutil.NotifyBalloon(i18n.T("desktop.confirm_title"), i18n.T("tray.not_running"))
 					continue
 				}
 				path, link, err := showPairQR(agent)
 				if err != nil {
-					winutil.NotifyBalloon("RunEverything", "Pairing failed: "+err.Error())
+					winutil.NotifyBalloon(i18n.T("desktop.confirm_title"), i18n.T("tray.pair_failed", err.Error()))
 					continue
 				}
 				_ = winutil.OpenFile(path)
 				_ = winutil.SetClipboardText(link)
-				winutil.NotifyBalloon("RunEverything", "QR opened; pair link copied")
+				winutil.NotifyBalloon(i18n.T("desktop.confirm_title"), i18n.T("tray.qr_opened"))
 			case <-mCopy.ClickedCh:
 				if agent == nil {
 					continue
 				}
 				_, link, err := showPairQR(agent)
 				if err != nil {
-					winutil.NotifyBalloon("RunEverything", err.Error())
+					winutil.NotifyBalloon(i18n.T("desktop.confirm_title"), err.Error())
 					continue
 				}
 				_ = winutil.SetClipboardText(link)
-				winutil.NotifyBalloon("RunEverything", "Pair link copied")
+				winutil.NotifyBalloon(i18n.T("desktop.confirm_title"), i18n.T("tray.link_copied"))
 			case <-mFolder.ClickedCh:
 				home, _ := identity.HomeDir()
 				_ = winutil.OpenFolder(home)
@@ -122,6 +123,7 @@ func startTrayAgent() (*Agent, func(), <-chan error) {
 		errCh <- err
 		return nil, nil, errCh
 	}
+	applyNetworkPrefs(cfg)
 	discovered := applyRelayDiscovery(cfg, "")
 	finalizePublicRelay(cfg, discovered)
 	applyRE2Paths(cfg)

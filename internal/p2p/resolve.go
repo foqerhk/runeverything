@@ -2,14 +2,15 @@ package p2p
 
 import (
 	"context"
-	"log"
 	"net/url"
 	"strings"
 
+	"github.com/foqerhk/runeverything/internal/i18n"
 	"github.com/foqerhk/runeverything/internal/netutil"
 )
 
-// ResolveForAgent picks relay URLs for a home/NAT agent using P2P crawl.
+// ResolveForAgent picks relay URLs for a behind-NAT agent using P2P crawl.
+// Callers should skip this when netutil.DirectPublicIP reports a non-NAT host.
 func ResolveForAgent(ctx context.Context, currentRelay, currentPublic string, autoDiscover bool) (relayURL, publicURL string, discovered bool) {
 	relayURL = strings.TrimSpace(currentRelay)
 	publicURL = strings.TrimSpace(currentPublic)
@@ -30,10 +31,10 @@ func ResolveForAgent(ctx context.Context, currentRelay, currentPublic string, au
 	best, results, err := DiscoverBest(ctx, sticky)
 	if err != nil {
 		if sticky != "" {
-			log.Printf("p2p: keep sticky relay %s (%v)", sticky, err)
+			i18n.Log("log.p2p_keep_sticky", sticky, err)
 			return sticky, sticky, false
 		}
-		log.Printf("p2p: discover failed (%v); keeping %s", err, relayURL)
+		i18n.Log("log.p2p_discover_failed", err, relayURL)
 		return relayURL, publicURL, false
 	}
 	healthy := 0
@@ -42,7 +43,7 @@ func ResolveForAgent(ctx context.Context, currentRelay, currentPublic string, au
 			healthy++
 		}
 	}
-	log.Printf("p2p: selected %s (%d/%d healthy)", best, healthy, len(results))
+	i18n.Log("log.p2p_selected", best, healthy, len(results))
 	return best, best, true
 }
 

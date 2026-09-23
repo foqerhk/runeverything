@@ -5,9 +5,11 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/foqerhk/runeverything/internal/i18n"
 )
 
 func cmdTray() {
-	fmt.Fprintln(os.Stderr, "tray mode is only available on Windows; use: runeverything run")
+	fmt.Fprintln(os.Stderr, i18n.T("tray.only_windows"))
 	os.Exit(2)
 }
