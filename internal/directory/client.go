@@ -13,11 +13,12 @@ import (
 )
 
 // DirectoryBase returns the discovery base used for GET list (env RE_DIRECTORY).
+// Empty when unset — discovery defaults to P2P seeds, not a static relays.json mirror.
 func DirectoryBase() string {
 	if v := strings.TrimSpace(os.Getenv("RE_DIRECTORY")); v != "" {
 		return strings.TrimRight(v, "/")
 	}
-	return strings.TrimRight(DefaultDirectoryURL, "/")
+	return ""
 }
 
 // AnnounceEndpoint returns where volunteers POST heartbeats (env RE_DIRECTORY_ANNOUNCE).
@@ -37,9 +38,12 @@ func AnnounceEndpoint() string {
 	return base + "/v1/relays/announce"
 }
 
-// FetchRelays loads volunteer relay entries from the directory (or static JSON mirror).
+// FetchRelays loads volunteer relay entries from a self-hosted directory (RE_DIRECTORY).
 func FetchRelays(ctx context.Context) ([]Entry, error) {
 	base := DirectoryBase()
+	if base == "" {
+		return nil, fmt.Errorf("RE_DIRECTORY not set (P2P seeds are the default discovery path)")
+	}
 	listURL := base
 	if !strings.HasSuffix(base, ".json") && !strings.Contains(base, "/v1/relays") {
 		listURL = base + "/v1/relays"

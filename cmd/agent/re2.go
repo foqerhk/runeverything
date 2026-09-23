@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/foqerhk/runeverything/internal/desktop"
+	"github.com/foqerhk/runeverything/internal/i18n"
 	"github.com/foqerhk/runeverything/internal/identity"
 	"github.com/foqerhk/runeverything/internal/pairing"
 	"github.com/foqerhk/runeverything/internal/protocol"
@@ -61,10 +62,10 @@ func (a *Agent) runLoopRE2() error {
 	if err := a.registerRE2(); err != nil {
 		return err
 	}
-	log.Printf("re2 registered as %s (%s) via %s", a.id.Name, a.id.DeviceID, a.cfg.RelayURL)
+	i18n.Log("log.re2_registered", a.id.Name, a.id.DeviceID, a.cfg.RelayURL)
 
 	if err := a.offerPairRE2(a.printQR); err != nil {
-		log.Printf("re2 pair offer: %v", err)
+		i18n.Log("log.re2_pair_offer", err)
 	}
 	a.printQR = false
 
@@ -101,17 +102,17 @@ func (a *Agent) runLoopRE2() error {
 			psk := re2.DerivePSK(a.pairingToken)
 			hs, err := re2.NewAgentHandshake(psk, a.noiseKP)
 			if err != nil {
-				log.Printf("re2 handshake init: %v", err)
+				i18n.Log("log.re2_handshake_init", err)
 				continue
 			}
 			tr := &pendingNoiseTransport{first: f.Payload, conn: a.re2Conn, routeID: a.id.DeviceID}
 			sess, _, err := hs.RunAgent(tr)
 			if err != nil {
-				log.Printf("re2 handshake failed: %v", err)
+				i18n.Log("log.re2_handshake_fail", err)
 				continue
 			}
 			a.re2Sess = sess
-			log.Printf("re2 noise session established device=%s", a.id.DeviceID)
+			i18n.Log("log.re2_noise_ok", a.id.DeviceID)
 
 		case re2.TypeTunnel:
 			if a.re2Sess == nil {
@@ -120,11 +121,11 @@ func (a *Agent) runLoopRE2() error {
 			}
 			plain, err := a.re2Sess.Decrypt(f.Payload)
 			if err != nil {
-				log.Printf("re2 decrypt failed: %v", err)
+				i18n.Log("log.re2_decrypt_fail", err)
 				continue
 			}
 			if err := a.handleRE2Inner(plain); err != nil {
-				log.Printf("re2 inner: %v", err)
+				i18n.Log("log.re2_inner", err)
 			}
 
 		case re2.TypePing:
@@ -136,14 +137,14 @@ func (a *Agent) runLoopRE2() error {
 		case re2.TypeError:
 			var ed re2.ErrorPayload
 			_ = json.Unmarshal(f.Payload, &ed)
-			log.Printf("re2 relay error: %s %s", ed.Code, ed.Message)
+			i18n.Log("log.re2_relay_error", ed.Code, ed.Message)
 			if ed.Code == "peer_gone" {
 				a.re2Sess = nil
 				a.closeAllSessionsOnly()
 			}
 
 		default:
-			log.Printf("re2 unknown frame type=%s", re2.FrameTypeName(f.Type))
+			i18n.Log("log.re2_unknown_frame", re2.FrameTypeName(f.Type))
 		}
 	}
 }
@@ -205,7 +206,7 @@ func (a *Agent) registerRE2() error {
 	a.udpHostPort = udp
 	if udp != "" {
 		if err := a.startUDP(udp); err != nil {
-			log.Printf("reudp assoc warning: %v (continuing on wss)", err)
+			i18n.Log("log.reudp_assoc_warn", err)
 		}
 	}
 	return nil
@@ -434,7 +435,7 @@ func (a *Agent) handleRE2Inner(plain []byte) error {
 		return a.handlePeripheral(mt, body)
 
 	default:
-		log.Printf("re2 unknown inner type=%d", mt)
+		i18n.Log("log.re2_unknown_inner", mt)
 	}
 	return nil
 }
@@ -476,7 +477,7 @@ func (a *Agent) pumpStdoutRE2(s *ptyx.Session) {
 		}
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("session %s read: %v", s.ID, err)
+				i18n.Log("log.session_read", s.ID, err)
 			}
 			a.closeSession(s.ID, "pty_exit")
 			_ = a.sendRE2Inner(re2.MsgSessionClose, re2.MustJSON(re2.SessionClosePayload{

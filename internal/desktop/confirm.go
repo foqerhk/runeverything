@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/foqerhk/runeverything/internal/i18n"
 )
 
 // ConfirmLocal shows a native yes/no dialog when possible; falls back to stderr prompt.
@@ -33,6 +35,7 @@ func ConfirmLocal(prompt string, wait time.Duration) bool {
 
 func confirmStdin(prompt string, wait time.Duration) bool {
 	fmt.Fprint(os.Stderr, prompt)
+	fmt.Fprint(os.Stderr, i18n.T("desktop.stdin_hint"))
 	ch := make(chan string, 1)
 	go func() {
 		var line string
@@ -41,29 +44,33 @@ func confirmStdin(prompt string, wait time.Duration) bool {
 	}()
 	select {
 	case line := <-ch:
-		return line == "y" || line == "Y" || line == "yes"
+		return line == "y" || line == "Y" || line == "yes" || line == "是"
 	case <-time.After(wait):
-		fmt.Fprintln(os.Stderr, "(timeout — denied)")
+		fmt.Fprintln(os.Stderr, i18n.T("desktop.timeout_denied"))
 		return false
 	}
 }
 
 func confirmDarwin(prompt string, wait time.Duration) (bool, error) {
-	script := fmt.Sprintf(`display dialog %q buttons {"Deny","Allow"} default button "Deny" cancel button "Deny" with title "RunEverything" giving up after %d`,
-		prompt, int(wait.Seconds()))
+	deny := i18n.T("desktop.btn_deny")
+	allow := i18n.T("desktop.btn_allow")
+	title := i18n.T("desktop.confirm_title")
+	script := fmt.Sprintf(`display dialog %q buttons {%q,%q} default button %q cancel button %q with title %q giving up after %d`,
+		prompt, deny, allow, deny, deny, title, int(wait.Seconds()))
 	cmd := exec.Command("osascript", "-e", script)
 	err := cmd.Run()
 	return err == nil, nil
 }
 
 func confirmLinux(prompt string, wait time.Duration) (bool, error) {
+	title := i18n.T("desktop.confirm_title")
 	if _, err := exec.LookPath("zenity"); err == nil {
-		cmd := exec.Command("zenity", "--question", "--title=RunEverything", "--text="+prompt, fmt.Sprintf("--timeout=%d", int(wait.Seconds())))
+		cmd := exec.Command("zenity", "--question", "--title="+title, "--text="+prompt, fmt.Sprintf("--timeout=%d", int(wait.Seconds())))
 		err := cmd.Run()
 		return err == nil, nil
 	}
 	if _, err := exec.LookPath("kdialog"); err == nil {
-		cmd := exec.Command("kdialog", "--yesno", prompt)
+		cmd := exec.Command("kdialog", "--yesno", prompt, "--title", title)
 		err := cmd.Run()
 		return err == nil, nil
 	}
@@ -71,8 +78,10 @@ func confirmLinux(prompt string, wait time.Duration) (bool, error) {
 }
 
 func confirmWindows(prompt string, wait time.Duration) (bool, error) {
-	ps := fmt.Sprintf(`Add-Type -AssemblyName PresentationFramework; $r=[System.Windows.MessageBox]::Show('%s','RunEverything','YesNo','Question'); if($r -eq 'Yes'){exit 0}else{exit 1}`,
-		strings.ReplaceAll(prompt, "'", "''"))
+	title := i18n.T("desktop.confirm_title")
+	ps := fmt.Sprintf(`Add-Type -AssemblyName PresentationFramework; $r=[System.Windows.MessageBox]::Show('%s','%s','YesNo','Question'); if($r -eq 'Yes'){exit 0}else{exit 1}`,
+		strings.ReplaceAll(prompt, "'", "''"),
+		strings.ReplaceAll(title, "'", "''"))
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", ps)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Run() }()
@@ -80,9 +89,7 @@ func confirmWindows(prompt string, wait time.Duration) (bool, error) {
 	case err := <-done:
 		return err == nil, nil
 	case <-time.After(wait):
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		return false, nil
+		_ = cmd.Process.Kill()
+		return false, fmt.Errorf("timeout")
 	}
 }

@@ -10,12 +10,11 @@ import (
 const (
 	DefaultAnnounceInterval = 30 * time.Second
 	DefaultTTL              = 90 * time.Second
-	// DefaultDirectoryURL is the bootstrap discovery endpoint.
-	DefaultDirectoryURL = "https://foqerhk.github.io/runeverything/relays.json"
-	DefaultAnnounceURL  = "" // set via RE_DIRECTORY_ANNOUNCE when running a live directory
+	// DefaultAnnounceURL is empty; set RE_DIRECTORY_ANNOUNCE for a live directory.
+	DefaultAnnounceURL = ""
 )
 
-// Entry is one volunteer relay in the public directory.
+// Entry is one volunteer relay in a self-hosted directory API.
 type Entry struct {
 	URL      string    `json:"url"`
 	Region   string    `json:"region,omitempty"`
@@ -32,7 +31,7 @@ type AnnounceRequest struct {
 	Version string `json:"version,omitempty"`
 }
 
-// ListResponse is returned by GET /v1/relays (and mirrors relays.json shape).
+// ListResponse is returned by GET /v1/relays.
 type ListResponse struct {
 	Relays []Entry `json:"relays"`
 }

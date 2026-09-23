@@ -40,3 +40,20 @@ func TestConstants(t *testing.T) {
 		t.Fatal(GetnodeIntl)
 	}
 }
+
+func TestGeoURL(t *testing.T) {
+	t.Setenv("RE_GEO_URL", "")
+	SetGeoURLOverride("")
+	if GeoURL() != DefaultGeoURL {
+		t.Fatalf("default got %s", GeoURL())
+	}
+	SetGeoURLOverride("https://geo.example/json")
+	defer SetGeoURLOverride("")
+	if GeoURL() != "https://geo.example/json" {
+		t.Fatalf("override got %s", GeoURL())
+	}
+	t.Setenv("RE_GEO_URL", "https://env-geo.example/json")
+	if GeoURL() != "https://env-geo.example/json" {
+		t.Fatalf("env should win: %s", GeoURL())
+	}
+}

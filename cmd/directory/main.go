@@ -55,11 +55,6 @@ func main() {
 		writeJSON(w, ent)
 	})
 
-	// Static mirror shape for Pages-compatible export.
-	mux.HandleFunc("/relays.json", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, directory.ListResponse{Relays: reg.List()})
-	})
-
 	log.SetOutput(os.Stderr)
 	log.Printf("RunEverything directory listening on %s (ttl=%s allow_ws=%v)", *listen, *ttl, *allowWS)
 	if err := http.ListenAndServe(*listen, mux); err != nil {

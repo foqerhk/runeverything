@@ -16,6 +16,7 @@ import (
 
 	"github.com/foqerhk/runeverything/internal/audit"
 	"github.com/foqerhk/runeverything/internal/desktop"
+	"github.com/foqerhk/runeverything/internal/i18n"
 	"github.com/foqerhk/runeverything/internal/identity"
 	"github.com/foqerhk/runeverything/internal/keepalive"
 	"github.com/foqerhk/runeverything/internal/netutil"
@@ -31,8 +32,9 @@ import (
 var version = "dev"
 
 func main() {
+	i18n.Init()
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
-	log.SetPrefix("runeverything: ")
+	log.SetPrefix(i18n.T("log.prefix"))
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -43,6 +45,10 @@ func main() {
 		case "status":
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 			cmdStatus()
+			return
+		case "config":
+			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+			cmdConfig()
 			return
 		case "run":
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
@@ -64,24 +70,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `RunEverything Agent — Intent Computing remote endpoint (RE2 only)
-
-Usage:
-  runeverything [run]     Connect to relay /re2, print pairing QR, serve PTY sessions
-  runeverything tray      Windows: system tray agent (QR / autostart / quit)
-  runeverything pair      Refresh pairing token and print QR (requires running agent OR local-only offer)
-  runeverything status    Show device identity and config
-  runeverything version   Print version
-
-Flags (run):
-  -relay URL              Relay WebSocket URL (default: auto-discover volunteer relay, or RE_RELAY)
-  -public URL             URL embedded in QR for clients (defaults to -relay; path forced to /re2)
-  -no-qr                  Do not print QR on start (still registers pairing token)
-
-Volunteer relays (Bitcoin-style P2P):
-  Official seeds are on GitHub (seeds.json). Agents crawl /v1/peers from seeds,
-  discover more relays, and pick the lowest-ping node. Opt out of sharing with RE_SHARE_RELAY=0.
-`)
+	fmt.Fprint(os.Stderr, i18n.T("usage"))
 }
 
 func applyRelayDiscovery(cfg *identity.Config, relayFlag string) (discovered bool) {
@@ -90,11 +79,26 @@ func applyRelayDiscovery(cfg *identity.Config, relayFlag string) (discovered boo
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+
+	// Not behind NAT: stay on local relay and advertise our own public IP.
+	// Do not pick a volunteer middle hop.
+	if ip, ok := netutil.DirectPublicIP(ctx); ok {
+		if cfg.RelayURL == "" || identity.HostIsLoopbackRelay(cfg.RelayURL) {
+			if cfg.RelayURL == "" {
+				cfg.RelayURL = "ws://127.0.0.1:8787/re2"
+			}
+			cfg.PublicRelay = netutil.AdvertiseRelayURL(cfg.RelayURL, ip)
+			i18n.Log("log.direct_public", ip)
+		}
+		return false
+	}
+
+	i18n.Log("log.behind_nat")
 	relay, pub, ok := p2p.ResolveForAgent(ctx, cfg.RelayURL, cfg.PublicRelay, true)
 	cfg.RelayURL = relay
 	cfg.PublicRelay = pub
 	if ok {
-		log.Printf("selected relay %s (lowest ping)", relay)
+		i18n.Log("log.selected_relay", relay)
 		return true
 	}
 	return false
@@ -131,18 +135,27 @@ func cmdStatus() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	applyNetworkPrefs(cfg)
 	applyRE2Paths(cfg)
 	home, _ := identity.HomeDir()
-	fmt.Printf("home:         %s\n", home)
-	fmt.Printf("device_id:    %s\n", id.DeviceID)
-	fmt.Printf("name:         %s\n", id.Name)
-	fmt.Printf("relay:        %s\n", cfg.RelayURL)
-	fmt.Printf("public_relay: %s\n", cfg.PublicRelay)
-	fmt.Printf("protocol:     RE2 (v%d)\n", protocol.VersionRE2)
-	fmt.Printf("relay_manual: %v\n", cfg.RelayManual)
-	fmt.Printf("share_relay:  %v\n", p2p.SharingEnabled(cfg.ShareRelay))
+	fmt.Print(i18n.T("status.home", home))
+	fmt.Print(i18n.T("status.device_id", id.DeviceID))
+	fmt.Print(i18n.T("status.name", id.Name))
+	fmt.Print(i18n.T("status.relay", cfg.RelayURL))
+	fmt.Print(i18n.T("status.public_relay", cfg.PublicRelay))
+	fmt.Print(i18n.T("status.protocol", protocol.VersionRE2))
+	fmt.Print(i18n.T("status.relay_manual", cfg.RelayManual))
+	fmt.Print(i18n.T("status.share_relay", p2p.SharingEnabled(cfg.ShareRelay)))
 	osName, arch := identity.PlatformInfo()
-	fmt.Printf("platform:     %s/%s\n", osName, arch)
+	fmt.Print(i18n.T("status.platform", osName, arch))
+	fmt.Print(i18n.T("status.lang", i18n.Active()))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if ip, ok := netutil.DirectPublicIP(ctx); ok {
+		fmt.Print(i18n.T("status.nat_no", ip))
+	} else {
+		fmt.Print(i18n.T("status.nat_yes"))
+	}
 }
 
 func cmdPair() {
@@ -158,6 +171,7 @@ func cmdPair() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	applyNetworkPrefs(cfg)
 	if *relay != "" {
 		cfg.RelayURL = *relay
 		cfg.RelayManual = true
@@ -176,7 +190,7 @@ func cmdPair() {
 	}
 	a.noiseKP = noiseKP
 	if err := a.connectOnceRE2(); err != nil {
-		log.Printf("warning: could not reach relay (%v); printing offline QR anyway", err)
+		i18n.Log("log.relay_offline", err)
 		p, _, err := pairing.NewPayloadOpts(cfg.PublicRelay, id.DeviceID, id.Name, pairing.DefaultTTL, pairing.Options{
 			NoisePub: identity.NoisePublicB64URL(noiseKP),
 			Version:  protocol.Version,
@@ -211,6 +225,7 @@ func cmdRun() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	applyNetworkPrefs(cfg)
 	if *relay != "" {
 		cfg.RelayURL = *relay
 		cfg.RelayManual = true
@@ -247,7 +262,7 @@ func cmdRun() {
 
 	go func() {
 		<-sig
-		log.Println("shutting down")
+		i18n.Log("log.shutting_down")
 		stopAwake()
 		a.closeAll()
 		os.Exit(0)
@@ -257,7 +272,7 @@ func cmdRun() {
 	for {
 		err := a.runLoopRE2()
 		if err != nil {
-			log.Printf("disconnected: %v; reconnecting in %s", err, backoff)
+			i18n.Log("log.disconnected", err, backoff)
 		}
 		time.Sleep(backoff)
 		if backoff < 30*time.Second {
@@ -369,6 +384,6 @@ func (a *Agent) closeSession(id, reason string) {
 	a.mu.Unlock()
 	if ok {
 		_ = s.Close()
-		log.Printf("session closed %s (%s)", id, reason)
+		i18n.Log("log.session_closed", id, reason)
 	}
 }
