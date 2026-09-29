@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +42,10 @@ func main() {
 		case "pair":
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 			cmdPair()
+			return
+		case "qr":
+			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+			cmdQR()
 			return
 		case "status":
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
@@ -158,6 +163,35 @@ func cmdStatus() {
 	}
 }
 
+// cmdQR prints the current pairing QR from ~/.runeverything/last_pairing.json
+// without opening a second relay connection (safe while `run` is already up).
+func cmdQR() {
+	home, err := identity.HomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	path := filepath.Join(home, "last_pairing.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		log.Fatal(i18n.T("qr.missing", path))
+	}
+	var p protocol.PairingPayload
+	if err := json.Unmarshal(b, &p); err != nil {
+		log.Fatal(err)
+	}
+	if p.PairingToken == "" || p.DeviceID == "" || p.Relay == "" {
+		log.Fatal(i18n.T("qr.incomplete", path))
+	}
+	if p.ExpiresAt > 0 && p.ExpiresAt <= time.Now().Unix() {
+		log.Fatal(i18n.T("qr.expired", time.Unix(p.ExpiresAt, 0).Format(time.RFC3339)))
+	}
+	left := time.Until(time.Unix(p.ExpiresAt, 0)).Round(time.Second)
+	fmt.Println(i18n.T("qr.ok", path, left))
+	if err := pairing.PrintQR(&p); err != nil {
+		log.Fatal(err)
+	}
+}
+
 func cmdPair() {
 	relay := flag.String("relay", "", "relay URL")
 	public := flag.String("public", "", "public relay URL for QR")
@@ -191,22 +225,13 @@ func cmdPair() {
 	a.noiseKP = noiseKP
 	if err := a.connectOnceRE2(); err != nil {
 		i18n.Log("log.relay_offline", err)
-		p, _, err := pairing.NewPayloadOpts(cfg.PublicRelay, id.DeviceID, id.Name, pairing.DefaultTTL, pairing.Options{
-			NoisePub: identity.NoisePublicB64URL(noiseKP),
-			Version:  protocol.Version,
-			UDP:      udpFromRelayURL(cfg.PublicRelay),
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		_ = pairing.PrintQR(p)
-		return
+		log.Fatal("cannot mint a usable pairing QR while relay is offline (token would not be redeemable)")
 	}
 	defer a.re2Conn.Close()
 	if err := a.registerRE2(); err != nil {
 		log.Fatal(err)
 	}
-	if err := a.offerPairRE2(true); err != nil {
+	if err := a.offerPairRE2(true, true); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -291,7 +316,8 @@ type Agent struct {
 	re2Conn      *re2.Conn
 	re2Sess      *re2.Session
 	noiseKP      *re2.StaticKeyPair
-	pairingToken string
+	pairingToken      string
+	pairingExpiresAt  int64 // unix seconds; reused across reconnects until expired
 
 	udpEP        *reudp.Endpoint
 	useUDP       bool

@@ -245,9 +245,18 @@ func serveRE2Client(hub *Hub, c *re2.Conn, r *http.Request) {
 				_ = writeRE2Err(c, f.RouteID, "bad_data", err.Error())
 				continue
 			}
-			ack, ok := hub.auth.RedeemPairing(data.DeviceID, data.PairingToken)
-			if !ok {
-				_ = writeRE2Err(c, data.DeviceID, "pair_failed", "invalid or expired pairing token")
+			ack, result := hub.auth.RedeemPairing(data.DeviceID, data.PairingToken)
+			switch result {
+			case auth.RedeemOK:
+				// continue below
+			case auth.RedeemExpired:
+				_ = writeRE2Err(c, data.DeviceID, "expired", "pairing token expired — generate a new QR on the Agent")
+				continue
+			case auth.RedeemDeviceMismatch:
+				_ = writeRE2Err(c, data.DeviceID, "pair_failed", "pairing token does not match this device_id")
+				continue
+			default:
+				_ = writeRE2Err(c, data.DeviceID, "pair_failed", "pairing token unknown or superseded — refresh the QR on the Agent (reconnect may have rotated it)")
 				continue
 			}
 			_ = c.WriteFrame(re2.Frame{

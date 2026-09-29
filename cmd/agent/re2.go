@@ -54,6 +54,10 @@ func (a *Agent) runLoopRE2() error {
 	a.noiseKP = noiseKP
 	applyRE2Paths(a.cfg)
 
+	// Fresh signaling/UDP generation — drop any prior Noise session so a new
+	// client handshake is not mis-decrypted as tunnel ciphertext.
+	a.clearCryptoSession()
+
 	if err := a.connectOnceRE2(); err != nil {
 		return err
 	}
@@ -64,7 +68,13 @@ func (a *Agent) runLoopRE2() error {
 	}
 	i18n.Log("log.re2_registered", a.id.Name, a.id.DeviceID, a.cfg.RelayURL)
 
-	if err := a.offerPairRE2(a.printQR); err != nil {
+	// Prefer the last offered token (disk) so App reconnect PSK still matches after Agent restart.
+	a.restorePairingTokenIfNeeded()
+
+	// Reuse an unexpired pairing token across reconnects. Rotating here would
+	// invalidate any QR already printed to the terminal while still "within expiry".
+	rotate := a.pairingToken == "" || a.pairingExpiresAt <= time.Now().Unix()
+	if err := a.offerPairRE2(a.printQR, rotate); err != nil {
 		i18n.Log("log.re2_pair_offer", err)
 	}
 	a.printQR = false
@@ -91,13 +101,14 @@ func (a *Agent) runLoopRE2() error {
 		}
 		switch f.Type {
 		case re2.TypeNoise:
-			if a.re2Sess != nil {
-				log.Printf("re2 unexpected NOISE after session device=%s len=%d", a.id.DeviceID, len(f.Payload))
-				continue
-			}
 			if a.pairingToken == "" {
 				log.Printf("re2 NOISE before pair offer; ignoring")
 				continue
+			}
+			if a.re2Sess != nil {
+				log.Printf("re2 NOISE while session open — reset for re-handshake device=%s", a.id.DeviceID)
+				a.re2Sess = nil
+				a.useUDP = false
 			}
 			psk := re2.DerivePSK(a.pairingToken)
 			hs, err := re2.NewAgentHandshake(psk, a.noiseKP)
@@ -122,6 +133,8 @@ func (a *Agent) runLoopRE2() error {
 			plain, err := a.re2Sess.Decrypt(f.Payload)
 			if err != nil {
 				i18n.Log("log.re2_decrypt_fail", err)
+				a.re2Sess = nil
+				a.useUDP = false
 				continue
 			}
 			if err := a.handleRE2Inner(plain); err != nil {
@@ -147,6 +160,40 @@ func (a *Agent) runLoopRE2() error {
 			i18n.Log("log.re2_unknown_frame", re2.FrameTypeName(f.Type))
 		}
 	}
+}
+
+func (a *Agent) clearCryptoSession() {
+	a.mu.Lock()
+	a.re2Sess = nil
+	a.useUDP = false
+	if a.udpEP != nil {
+		_ = a.udpEP.Close()
+		a.udpEP = nil
+	}
+	a.mu.Unlock()
+}
+
+func (a *Agent) restorePairingTokenIfNeeded() {
+	if a.pairingToken != "" && a.pairingExpiresAt > time.Now().Unix() {
+		return
+	}
+	home, err := identity.HomeDir()
+	if err != nil {
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(home, "last_pairing.json"))
+	if err != nil {
+		return
+	}
+	var p protocol.PairingPayload
+	if json.Unmarshal(b, &p) != nil || p.PairingToken == "" {
+		return
+	}
+	if p.ExpiresAt > 0 && p.ExpiresAt <= time.Now().Unix() {
+		return
+	}
+	a.pairingToken = p.PairingToken
+	a.pairingExpiresAt = p.ExpiresAt
 }
 
 func (a *Agent) connectOnceRE2() error {
@@ -207,9 +254,28 @@ func (a *Agent) registerRE2() error {
 	if udp != "" {
 		if err := a.startUDP(udp); err != nil {
 			i18n.Log("log.reudp_assoc_warn", err)
+			// Keep retrying in background — client ASSOC needs the agent on UDP.
+			go a.retryUDPInBackground(udp)
 		}
 	}
 	return nil
+}
+
+func (a *Agent) retryUDPInBackground(udpHostPort string) {
+	for attempt := 1; attempt <= 8; attempt++ {
+		time.Sleep(time.Duration(attempt) * 2 * time.Second)
+		a.mu.Lock()
+		already := a.udpEP != nil
+		a.mu.Unlock()
+		if already {
+			return
+		}
+		if err := a.startUDP(udpHostPort); err != nil {
+			i18n.Log("log.reudp_assoc_warn", err)
+			continue
+		}
+		return
+	}
 }
 
 func udpFromRelayURL(relay string) string {
@@ -228,23 +294,47 @@ func udpFromRelayURL(relay string) string {
 	return net.JoinHostPort(host, port)
 }
 
-func (a *Agent) offerPairRE2(print bool) error {
-	p, token, err := pairing.NewPayloadOpts(
-		a.cfg.PublicRelay,
-		a.id.DeviceID,
-		a.id.Name,
-		pairing.DefaultTTL,
-		pairing.Options{
-			NoisePub: identity.NoisePublicB64URL(a.noiseKP),
-			Version:  protocol.Version,
-			UDP:      a.udpHostPort,
-		},
-	)
-	if err != nil {
-		return err
+// offerPairRE2 publishes a pairing token to the relay.
+// When rotate is false and a non-expired token exists, the same token is re-advertised
+// so a previously printed QR keeps working after agent reconnect.
+func (a *Agent) offerPairRE2(print, rotate bool) error {
+	noisePub := identity.NoisePublicB64URL(a.noiseKP)
+	udp := a.udpHostPort
+
+	var p *protocol.PairingPayload
+	var token string
+	if !rotate && a.pairingToken != "" && a.pairingExpiresAt > time.Now().Unix() {
+		token = a.pairingToken
+		p = &protocol.PairingPayload{
+			V:            protocol.Version,
+			Relay:        a.cfg.PublicRelay,
+			DeviceID:     a.id.DeviceID,
+			PairingToken: token,
+			Name:         a.id.Name,
+			ExpiresAt:    a.pairingExpiresAt,
+			NoisePub:     noisePub,
+			UDP:          udp,
+		}
+	} else {
+		var err error
+		p, token, err = pairing.NewPayloadOpts(
+			a.cfg.PublicRelay,
+			a.id.DeviceID,
+			a.id.Name,
+			pairing.DefaultTTL,
+			pairing.Options{
+				NoisePub: noisePub,
+				Version:  protocol.Version,
+				UDP:      udp,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		a.re2Sess = nil // new token ⇒ new Noise PSK
 	}
 	a.pairingToken = token
-	a.re2Sess = nil // new offer invalidates prior E2E (new PSK)
+	a.pairingExpiresAt = p.ExpiresAt
 
 	if err := a.re2Conn.WriteFrame(re2.Frame{
 		Type:    re2.TypePairOffer,

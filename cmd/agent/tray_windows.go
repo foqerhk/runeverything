@@ -157,22 +157,13 @@ func startTrayAgent() (*Agent, func(), <-chan error) {
 }
 
 func refreshPairSilent(a *Agent) error {
-	return a.offerPairRE2(false)
+	return a.offerPairRE2(false, true)
 }
 
 func showPairQR(a *Agent) (pngPath, deepLink string, err error) {
-	if err := a.offerPairRE2(false); err != nil {
-		// fall back to last_pairing.json
-		p, e2 := loadLastPairing()
-		if e2 != nil {
-			return "", "", err
-		}
-		home, _ := identity.HomeDir()
-		path, e3 := pairing.WriteQRPNG(p, home)
-		if e3 != nil {
-			return "", "", e3
-		}
-		return path, p.DeepLink(), nil
+	// Always rotate when the user asks for a QR so the shown code matches the relay.
+	if err := a.offerPairRE2(false, true); err != nil {
+		return "", "", err
 	}
 	p, err := loadLastPairing()
 	if err != nil {

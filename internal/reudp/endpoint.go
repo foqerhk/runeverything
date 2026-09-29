@@ -7,23 +7,25 @@ import (
 	"time"
 )
 
-// Endpoint is a client-side UDP association to a relay.
+// Endpoint is a client-side UDP association to a relay, with optional P2P direct path.
 type Endpoint struct {
 	conn      *net.UDPConn
 	relayAddr *net.UDPAddr
 	routeHash uint32
 	deviceID  string
 
-	mu         sync.Mutex
-	nextSeq    uint32
-	nextExpect uint32
-	inflight   map[uint32]*inflightPkt
-	recvBuf    map[uint32][]byte
-	incoming   chan []byte
-	assocOK    chan *AssocOKPayload
-	assocErr   chan error
-	cong       *Congestion
-	closed     bool
+	mu           sync.Mutex
+	nextSeq      uint32
+	nextExpect   uint32
+	inflight     map[uint32]*inflightPkt
+	recvBuf      map[uint32][]byte
+	incoming     chan []byte
+	assocOK      chan *AssocOKPayload
+	assocErr     chan error
+	cong         *Congestion
+	closed       bool
+	directConn   *net.UDPConn // optional P2P path after hole-punch
+	preferDirect bool
 }
 
 type inflightPkt struct {
@@ -65,11 +67,73 @@ func (ep *Endpoint) Close() error {
 		return nil
 	}
 	ep.closed = true
+	direct := ep.directConn
+	ep.directConn = nil
+	ep.preferDirect = false
 	ep.mu.Unlock()
+	if direct != nil {
+		_ = direct.Close()
+	}
 	return ep.conn.Close()
 }
 
 func (ep *Endpoint) LocalAddr() net.Addr { return ep.conn.LocalAddr() }
+
+// PreferDirect switches DATA/ACK writes to a punched peer UDP socket while
+// keeping the relay socket for fallback reads. Media then benefits from P2P RTT.
+func (ep *Endpoint) PreferDirect(conn *net.UDPConn) {
+	if conn == nil {
+		return
+	}
+	_ = conn.SetReadBuffer(1 << 20)
+	_ = conn.SetWriteBuffer(1 << 20)
+	ep.mu.Lock()
+	old := ep.directConn
+	ep.directConn = conn
+	ep.preferDirect = true
+	ep.mu.Unlock()
+	if old != nil && old != conn {
+		_ = old.Close()
+	}
+	go ep.readLoopConn(conn)
+}
+
+// ClearDirect falls back to relay-only path.
+func (ep *Endpoint) ClearDirect() {
+	ep.mu.Lock()
+	old := ep.directConn
+	ep.directConn = nil
+	ep.preferDirect = false
+	ep.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+}
+
+func (ep *Endpoint) UsingDirect() bool {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	return ep.preferDirect && ep.directConn != nil
+}
+
+func (ep *Endpoint) writeBytes(b []byte) error {
+	ep.mu.Lock()
+	direct := ep.directConn
+	prefer := ep.preferDirect
+	ep.mu.Unlock()
+	if prefer && direct != nil {
+		_, err := direct.Write(b)
+		if err == nil {
+			return nil
+		}
+		// Fall back to relay on direct write failure.
+		ep.mu.Lock()
+		ep.preferDirect = false
+		ep.mu.Unlock()
+	}
+	_, err := ep.conn.Write(b)
+	return err
+}
 
 func (ep *Endpoint) AssocAgent(deviceID, deviceSecret string) error {
 	ep.deviceID = deviceID
@@ -109,8 +173,7 @@ func (ep *Endpoint) writeRaw(p Packet) error {
 	if err != nil {
 		return err
 	}
-	_, err = ep.conn.Write(b)
-	return err
+	return ep.writeBytes(b)
 }
 
 func (ep *Endpoint) SendUnreliable(payload []byte) error {
@@ -165,8 +228,7 @@ func (ep *Endpoint) sendData(payload []byte, flags byte) error {
 		ep.mu.Unlock()
 	}
 	ep.cong.OnSend()
-	_, err = ep.conn.Write(b)
-	return err
+	return ep.writeBytes(b)
 }
 
 func (ep *Endpoint) Recv() ([]byte, error) {
@@ -197,11 +259,21 @@ func (e timeoutErr) Error() string { return string(e) }
 func (e timeoutErr) Timeout() bool { return true }
 
 func (ep *Endpoint) readLoop() {
+	ep.readLoopConn(ep.conn)
+}
+
+func (ep *Endpoint) readLoopConn(conn *net.UDPConn) {
 	buf := make([]byte, MaxPacket+64)
 	for {
-		n, err := ep.conn.Read(buf)
+		n, err := conn.Read(buf)
 		if err != nil {
-			close(ep.incoming)
+			ep.mu.Lock()
+			closed := ep.closed
+			isPrimary := conn == ep.conn
+			ep.mu.Unlock()
+			if isPrimary && !closed {
+				close(ep.incoming)
+			}
 			return
 		}
 		pkt, err := Decode(buf[:n])
@@ -325,7 +397,7 @@ func (ep *Endpoint) retransmitLoop() {
 		lost := false
 		for _, inf := range ep.inflight {
 			if now.Sub(inf.sentAt) > 200*time.Millisecond && inf.retries < 8 {
-				_, _ = ep.conn.Write(inf.data)
+				_ = ep.writeBytes(inf.data)
 				inf.sentAt = now
 				inf.retries++
 				if inf.retries >= 3 {

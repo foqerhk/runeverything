@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,8 +224,16 @@ func (a *Agent) closeCamera() {
 	}
 }
 
-func localUDPCandidates() []string {
+func (a *Agent) localUDPCandidates() []string {
 	var out []string
+	port := 0
+	a.mu.Lock()
+	if a.udpEP != nil {
+		if ua, ok := a.udpEP.LocalAddr().(*net.UDPAddr); ok && ua != nil {
+			port = ua.Port
+		}
+	}
+	a.mu.Unlock()
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return out
@@ -245,8 +254,16 @@ func localUDPCandidates() []string {
 			if ip == nil || ip.To4() == nil {
 				continue
 			}
-			out = append(out, ip.String()+":0")
+			if port > 0 {
+				out = append(out, net.JoinHostPort(ip.String(), itoaPort(port)))
+			} else {
+				out = append(out, ip.String()+":0")
+			}
 		}
 	}
 	return out
+}
+
+func itoaPort(n int) string {
+	return strconv.Itoa(n)
 }

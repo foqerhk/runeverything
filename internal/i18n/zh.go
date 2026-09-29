@@ -9,7 +9,8 @@ var zh = map[string]string{
 用法:
   runeverything [run]     连接中继 /re2，打印配对二维码，提供 PTY 会话
   runeverything tray      Windows：托盘常驻（二维码 / 开机自启 / 退出）
-  runeverything pair      刷新配对令牌并打印二维码
+  runeverything qr        显示当前配对二维码（读 last_pairing.json，不打断已在跑的 run）
+  runeverything pair      向中继刷新配对令牌并打印二维码（另开连接，可能挤掉正在跑的 agent）
   runeverything status    显示设备身份与配置
   runeverything config    查看/设置公网 IP 检测与地区接口（详见：runeverything config help）
   runeverything version   打印版本号
@@ -109,6 +110,11 @@ var zh = map[string]string{
 	"pair.expires":   "过期: %s",
 	"pair.json":      "JSON 载荷:",
 	"pair.deeplink":  "深链:",
+
+	"qr.ok":         "当前配对码（%s，剩余 %s）:",
+	"qr.missing":    "没有配对文件 %s。请先启动 runeverything run，或执行 runeverything pair。",
+	"qr.incomplete": "配对文件不完整: %s",
+	"qr.expired":    "当前配对码已过期（%s）。请重启 runeverything run 生成新码，或执行 runeverything pair。",
 
 	"desktop.confirm":         "允许远程桌面会话？",
 	"desktop.confirm_title":   "RunEverything",

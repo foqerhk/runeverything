@@ -9,7 +9,8 @@ var en = map[string]string{
 Usage:
   runeverything [run]     Connect to relay /re2, print pairing QR, serve PTY sessions
   runeverything tray      Windows: system tray agent (QR / autostart / quit)
-  runeverything pair      Refresh pairing token and print QR (requires running agent OR local-only offer)
+  runeverything qr        Show current pairing QR (reads last_pairing.json; safe while run is up)
+  runeverything pair      Mint a new pairing token on the relay and print QR (extra connection; may kick a running agent)
   runeverything status    Show device identity and config
   runeverything config    Show/set public-IP echo + geo endpoints (see: runeverything config help)
   runeverything version   Print version
@@ -109,6 +110,11 @@ Built-in IP echo defaults:
 	"pair.expires":   "Expires: %s",
 	"pair.json":      "JSON payload:",
 	"pair.deeplink":  "Deep link:",
+
+	"qr.ok":         "Current pairing QR (%s, %s left):",
+	"qr.missing":    "No pairing file at %s. Start runeverything run first, or run runeverything pair.",
+	"qr.incomplete": "Incomplete pairing file: %s",
+	"qr.expired":    "Current pairing QR expired (%s). Restart runeverything run or run runeverything pair.",
 
 	"desktop.confirm":         "Allow remote desktop session?",
 	"desktop.confirm_title":   "RunEverything",

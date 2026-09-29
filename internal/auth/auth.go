@@ -62,21 +62,34 @@ func (s *Store) PutPairing(deviceID, name, relay, token string, ttl time.Duratio
 	}
 }
 
-func (s *Store) RedeemPairing(deviceID, token string) (PairAck, bool) {
+// RedeemPairingResult distinguishes unknown/used vs expired vs ok for client UX.
+type RedeemPairingResult int
+
+const (
+	RedeemOK RedeemPairingResult = iota
+	RedeemUnknown
+	RedeemExpired
+	RedeemDeviceMismatch
+)
+
+func (s *Store) RedeemPairing(deviceID, token string) (PairAck, RedeemPairingResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ent, ok := s.pairing[token]
-	if !ok || ent.DeviceID != deviceID {
-		return PairAck{}, false
+	if !ok {
+		return PairAck{}, RedeemUnknown
+	}
+	if ent.DeviceID != deviceID {
+		return PairAck{}, RedeemDeviceMismatch
 	}
 	if time.Now().After(ent.ExpiresAt) {
 		delete(s.pairing, token)
-		return PairAck{}, false
+		return PairAck{}, RedeemExpired
 	}
 	delete(s.pairing, token)
 	sess, err := RandomToken(24)
 	if err != nil {
-		return PairAck{}, false
+		return PairAck{}, RedeemUnknown
 	}
 	s.sessions[sess] = SessionEntry{
 		Token:    sess,
@@ -88,7 +101,7 @@ func (s *Store) RedeemPairing(deviceID, token string) (PairAck, bool) {
 		SessionToken: sess,
 		Name:         ent.Name,
 		Relay:        ent.Relay,
-	}, true
+	}, RedeemOK
 }
 
 type PairAck struct {

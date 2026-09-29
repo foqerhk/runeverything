@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -34,12 +35,30 @@ func (a *Agent) startUDP(udpHostPort string) error {
 	if err != nil {
 		return err
 	}
-	if err := ep.AssocAgent(a.id.DeviceID, a.id.DeviceSecret); err != nil {
-		_ = ep.Close()
-		return err
-	}
-	ok, err := ep.WaitAssocOK(10 * time.Second)
-	if err != nil {
+	// Retransmit ASSOC — volunteer-relay UDP is often lossy; a single shot times out.
+	var ok *reudp.AssocOKPayload
+	deadline := time.Now().Add(12 * time.Second)
+	for {
+		if err := ep.AssocAgent(a.id.DeviceID, a.id.DeviceSecret); err != nil {
+			_ = ep.Close()
+			return err
+		}
+		remain := time.Until(deadline)
+		if remain <= 0 {
+			_ = ep.Close()
+			return fmt.Errorf("reudp: assoc timeout")
+		}
+		wait := remain
+		if wait > time.Second {
+			wait = time.Second
+		}
+		ok, err = ep.WaitAssocOK(wait)
+		if err == nil {
+			break
+		}
+		if ne, okT := err.(interface{ Timeout() bool }); okT && ne.Timeout() {
+			continue
+		}
 		_ = ep.Close()
 		return err
 	}
@@ -49,6 +68,9 @@ func (a *Agent) startUDP(udpHostPort string) error {
 		_ = a.udpEP.Close()
 	}
 	a.udpEP = ep
+	// New UDP association ⇒ peer will Noise again; drop leftover session.
+	a.re2Sess = nil
+	a.useUDP = false
 	a.mu.Unlock()
 	go a.udpReadLoop()
 	return nil
@@ -86,32 +108,56 @@ func (a *Agent) udpReadLoop() {
 
 func (a *Agent) handleUDPPayload(payload []byte) error {
 	if a.re2Sess == nil {
-		if a.pairingToken == "" {
-			return nil
-		}
-		psk := re2.DerivePSK(a.pairingToken)
-		hs, err := re2.NewAgentHandshake(psk, a.noiseKP)
-		if err != nil {
-			return err
-		}
-		tr := &udpPendingTransport{first: payload, ep: a.udpEP}
-		sess, _, err := hs.RunAgent(tr)
-		if err != nil {
-			return err
-		}
-		a.re2Sess = sess
-		a.useUDP = true
-		a.touchActivity()
-		audit.Log("noise_ok", "udp")
-		i18n.Log("log.re2_noise_udp", a.id.DeviceID)
-		return nil
+		return a.completeUDPNoise(payload)
 	}
 	a.touchActivity()
 	plain, err := a.re2Sess.Decrypt(payload)
 	if err != nil {
+		// Client may restart Noise after UDP re-ASSOC while we still hold a stale
+		// session. Only treat small payloads that look like XX msg1 as a re-handshake;
+		// otherwise keep the decrypt error (wrong PSK / corruption / out-of-order data).
+		if looksLikeNoiseMsg1(payload) {
+			a.mu.Lock()
+			a.re2Sess = nil
+			a.useUDP = false
+			a.mu.Unlock()
+			if err2 := a.completeUDPNoise(payload); err2 == nil {
+				return nil
+			}
+		}
 		return err
 	}
 	return a.handleRE2Inner(plain)
+}
+
+func looksLikeNoiseMsg1(payload []byte) bool {
+	// Noise XX msg1 is initiator ephemeral (32) + optional empty payload/MAC.
+	n := len(payload)
+	return n >= 32 && n <= 80
+}
+
+func (a *Agent) completeUDPNoise(payload []byte) error {
+	if a.pairingToken == "" {
+		return nil
+	}
+	psk := re2.DerivePSK(a.pairingToken)
+	hs, err := re2.NewAgentHandshake(psk, a.noiseKP)
+	if err != nil {
+		return err
+	}
+	tr := &udpPendingTransport{first: payload, ep: a.udpEP}
+	sess, _, err := hs.RunAgent(tr)
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.re2Sess = sess
+	a.useUDP = true
+	a.mu.Unlock()
+	a.touchActivity()
+	audit.Log("noise_ok", "udp")
+	i18n.Log("log.re2_noise_udp", a.id.DeviceID)
+	return nil
 }
 
 type udpPendingTransport struct {
@@ -523,9 +569,9 @@ func (a *Agent) handleDesktopInput(mt byte, body []byte) error {
 func (a *Agent) handleHolePunch(hp re2.HolePunchPayload) error {
 	switch hp.Action {
 	case "offer", "candidate":
-		cands := localUDPCandidates()
+		cands := a.localUDPCandidates()
 		_ = a.sendTunnel(re2.MsgHolePunch, re2.MustJSON(re2.HolePunchPayload{
-			Action: "candidate", Token: hp.Token, Candidates: cands, UDPAddr: hp.UDPAddr,
+			Action: "candidate", Token: hp.Token, Candidates: cands, UDPAddr: firstNonEmpty(cands, hp.UDPAddr),
 		}), true)
 		targets := append([]string{}, hp.Candidates...)
 		if hp.UDPAddr != "" {
@@ -536,17 +582,55 @@ func (a *Agent) handleHolePunch(hp re2.HolePunchPayload) error {
 				continue
 			}
 			go func(peer string) {
-				conn, err := holepunch.TryDirect(0, peer, hp.Token, 2*time.Second)
+				conn, err := holepunch.TryDirect(0, peer, hp.Token, 3*time.Second)
 				if err != nil {
 					return
 				}
-				_ = conn.Close()
-				_ = a.sendTunnel(re2.MsgHolePunch, re2.MustJSON(re2.HolePunchPayload{Action: "connected", Token: hp.Token, UDPAddr: peer}), true)
-				audit.Log("holepunch_ok", peer)
+				a.mu.Lock()
+				ep := a.udpEP
+				a.mu.Unlock()
+				if ep != nil {
+					ep.PreferDirect(conn)
+					audit.Log("holepunch_direct", peer)
+				} else {
+					_ = conn.Close()
+				}
+				_ = a.sendTunnel(re2.MsgHolePunch, re2.MustJSON(re2.HolePunchPayload{
+					Action: "connected", Token: hp.Token, UDPAddr: peer,
+				}), true)
 			}(addr)
 		}
+	case "connected":
+		// Peer already prefers direct; if we have their addr and no direct yet, try once.
+		if hp.UDPAddr == "" || strings.HasSuffix(hp.UDPAddr, ":0") {
+			return nil
+		}
+		a.mu.Lock()
+		ep := a.udpEP
+		already := ep != nil && ep.UsingDirect()
+		a.mu.Unlock()
+		if already || ep == nil {
+			return nil
+		}
+		go func(peer string) {
+			conn, err := holepunch.TryDirect(0, peer, hp.Token, 2*time.Second)
+			if err != nil {
+				return
+			}
+			ep.PreferDirect(conn)
+			audit.Log("holepunch_direct_ack", peer)
+		}(hp.UDPAddr)
 	}
 	return nil
+}
+
+func firstNonEmpty(cands []string, fallback string) string {
+	for _, c := range cands {
+		if c != "" && !strings.HasSuffix(c, ":0") {
+			return c
+		}
+	}
+	return fallback
 }
 
 func (a *Agent) handleFileMsg(mt byte, body []byte) error {
