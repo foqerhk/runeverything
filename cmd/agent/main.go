@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -161,6 +162,43 @@ func cmdStatus() {
 	} else {
 		fmt.Print(i18n.T("status.nat_yes"))
 	}
+	printHostPermissionStatus()
+}
+
+func printHostPermissionStatus() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	p := desktop.CheckHostPermissions()
+	yes, no := i18n.T("status.perm_yes"), i18n.T("status.perm_no")
+	if p.ScreenRecording {
+		fmt.Print(i18n.T("status.perm_screen", yes))
+	} else {
+		fmt.Print(i18n.T("status.perm_screen", no))
+	}
+	if p.Accessibility {
+		fmt.Print(i18n.T("status.perm_ax", yes))
+	} else {
+		fmt.Print(i18n.T("status.perm_ax", no))
+	}
+}
+
+func logHostPermissions(p desktop.HostPermissions) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	if p.ScreenRecording && p.Accessibility {
+		i18n.Log("log.perm_ok")
+		return
+	}
+	if !p.ScreenRecording {
+		i18n.Log("log.perm_screen_need")
+	}
+	if !p.Accessibility {
+		i18n.Log("log.perm_ax_need")
+	}
+	i18n.Log("log.perm_mic_hint")
+	i18n.Log("log.perm_camera_hint")
 }
 
 // cmdQR prints the current pairing QR from ~/.runeverything/last_pairing.json
@@ -278,6 +316,9 @@ func cmdRun() {
 		xferNames: make(map[string]string),
 		sessionIdle: envDuration("RE_SESSION_IDLE", 30*time.Minute),
 	}
+
+	// macOS: request Screen Recording + Accessibility up front so remote desktop works.
+	logHostPermissions(desktop.EnsureHostPermissions())
 
 	stopAwake := keepalive.Start()
 	defer stopAwake()

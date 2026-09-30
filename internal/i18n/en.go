@@ -100,6 +100,20 @@ Built-in IP echo defaults:
 	"log.p2p_selected":         "p2p: selected %s (%d/%d healthy)",
 	"log.p2p_keep_sticky":      "p2p: keep sticky relay %s (%v)",
 	"log.p2p_discover_failed":  "p2p: discover failed (%v); keeping %s",
+	"log.perm_ok":              "host permissions OK (Screen Recording + Accessibility)",
+	"log.perm_screen_need":     "Screen Recording permission missing: System Settings → Privacy & Security → Screen Recording → enable runeverything (then restart this agent)",
+	"log.perm_ax_need":         "Accessibility permission missing: System Settings → Privacy & Security → Accessibility → enable runeverything (remote keyboard/mouse)",
+	"log.perm_mic_hint":        "For remote audio: System Settings → Privacy & Security → Microphone → allow runeverything / Terminal (optional)",
+	"log.perm_camera_hint":     "For camera peripherals: System Settings → Privacy & Security → Camera → allow runeverything (optional)",
+
+	"status.perm_screen": "screen_recording: %s\n",
+	"status.perm_ax":     "accessibility:   %s\n",
+	"status.perm_yes":    "granted",
+	"status.perm_no":     "denied (remote desktop will fail)",
+	"status.perm_n_a":    "n/a",
+
+	"err.perm_screen": "Screen Recording not granted — enable runeverything in System Settings, then restart the Agent",
+	"err.perm_ax":     "Accessibility not granted — remote input may fail; enable runeverything in System Settings",
 
 	"pair.title":     "=== RunEverything Pairing ===",
 	"pair.device":    "Device: %s (%s)",

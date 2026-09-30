@@ -100,6 +100,20 @@ var zh = map[string]string{
 	"log.p2p_selected":         "p2p: 已选择 %s（健康 %d/%d）",
 	"log.p2p_keep_sticky":      "p2p: 保留粘性中继 %s（%v）",
 	"log.p2p_discover_failed":  "p2p: 发现失败（%v）；继续使用 %s",
+	"log.perm_ok":              "本机权限已就绪（屏幕录制 + 辅助功能）",
+	"log.perm_screen_need":     "缺少「屏幕录制」权限：系统设置 → 隐私与安全性 → 屏幕录制 → 勾选 runeverything（改完后请重启本程序）",
+	"log.perm_ax_need":         "缺少「辅助功能」权限：系统设置 → 隐私与安全性 → 辅助功能 → 勾选 runeverything（用于远程键鼠）",
+	"log.perm_mic_hint":        "若需远程声音：系统设置 → 隐私与安全性 → 麦克风 → 允许 runeverything / Terminal（可选）",
+	"log.perm_camera_hint":     "若使用摄像头外设：系统设置 → 隐私与安全性 → 摄像头 → 允许 runeverything（可选）",
+
+	"status.perm_screen": "屏幕录制:   %s\n",
+	"status.perm_ax":     "辅助功能:   %s\n",
+	"status.perm_yes":    "已授权",
+	"status.perm_no":     "未授权（远程桌面不可用）",
+	"status.perm_n_a":    "不适用",
+
+	"err.perm_screen": "屏幕录制未授权：请在系统设置中勾选 runeverything 后重启 Agent",
+	"err.perm_ax":     "辅助功能未授权：远程键鼠可能无效，请在系统设置中勾选 runeverything",
 
 	"pair.title":     "=== RunEverything 配对 ===",
 	"pair.device":    "设备: %s（%s）",

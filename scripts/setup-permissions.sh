@@ -10,8 +10,11 @@ case "$OS" in
     echo "macOS — grant these once so remote desktop works:"
     echo "  1. System Settings → Privacy & Security → Screen Recording → enable Terminal / runeverything"
     echo "  2. Privacy & Security → Accessibility → enable for input injection"
-    echo "  3. Keep Agent awake: launchd install via scripts/install.sh (default)"
+    echo "  3. Optional: Microphone (remote audio), Camera (camera peripheral)"
+    echo "  Agent will prompt / open Settings on first run; restart after granting."
+    echo "  4. Keep Agent awake: launchd install via scripts/install.sh (default)"
     echo "  Optional: RE_PAIR_CONFIRM=1 to approve each new scan on the Mac"
+    echo "  Optional: RE_OPEN_PRIVACY=0 to skip auto-opening System Settings"
     ;;
   Linux)
     echo "Linux — ensure a graphical session is logged in (X11/Wayland)."

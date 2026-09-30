@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -213,6 +214,16 @@ func (a *Agent) openDesktop(data re2.OpenDesktopPayload) error {
 	if err := a.checkDesktopAccess(data.Password); err != nil {
 		audit.Log("desktop_denied", err.Error())
 		return err
+	}
+	if runtime.GOOS == "darwin" {
+		p := desktop.EnsureHostPermissions()
+		if !p.ScreenRecording {
+			return errString(i18n.T("err.perm_screen"))
+		}
+		if !p.Accessibility {
+			// Still allow video; warn that input may not work.
+			i18n.Log("log.perm_ax_need")
+		}
 	}
 	a.closeDesktop()
 	desktop.SetSelectedMonitor(data.DisplayID)
