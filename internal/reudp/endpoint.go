@@ -50,7 +50,7 @@ func Dial(relayHostPort string) (*Endpoint, error) {
 		relayAddr: raddr,
 		inflight:  make(map[uint32]*inflightPkt),
 		recvBuf:   make(map[uint32][]byte),
-		incoming:  make(chan []byte, 256),
+		incoming:  make(chan []byte, 1024),
 		assocOK:   make(chan *AssocOKPayload, 1),
 		assocErr:  make(chan error, 1),
 		cong:      NewCongestion(),
@@ -189,6 +189,10 @@ func (ep *Endpoint) SendLatest(payload []byte) error {
 }
 
 func (ep *Endpoint) sendData(payload []byte, flags byte) error {
+	// Reject before consuming a seq — Encode failure must not punch a HOL hole.
+	if len(payload) > MaxPayload {
+		return ErrTooLarge
+	}
 	for i := 0; i < 500; i++ {
 		if ep.cong.CanSend() {
 			break
@@ -220,6 +224,8 @@ func (ep *Endpoint) sendData(payload []byte, flags byte) error {
 	}
 	b, err := Encode(p, nil)
 	if err != nil {
+		// Extremely unlikely after the length check; still avoid leaving a hole
+		// by not recording inflight (receiver will stall — log upstream).
 		return err
 	}
 	if flags&FlagReliable != 0 {
@@ -361,9 +367,14 @@ func (ep *Endpoint) handleData(pkt *Packet) {
 		delete(ep.recvBuf, ep.nextExpect)
 		ep.nextExpect++
 		ep.mu.Unlock()
+		// Never drop reliable payloads — blocking briefly beats HOL stalls upstream.
 		select {
 		case ep.incoming <- body:
-		default:
+		case <-time.After(2 * time.Second):
+			select {
+			case ep.incoming <- body:
+			default:
+			}
 		}
 		ep.mu.Lock()
 	}
@@ -396,11 +407,18 @@ func (ep *Endpoint) retransmitLoop() {
 		now := time.Now()
 		lost := false
 		for _, inf := range ep.inflight {
-			if now.Sub(inf.sentAt) > 200*time.Millisecond && inf.retries < 8 {
+			age := now.Sub(inf.sentAt)
+			// Keep retransmitting while unacked — volunteer relays drop heavily;
+			// giving up after a few tries permanently HOL-blocks the peer.
+			gap := 200 * time.Millisecond
+			if inf.retries > 10 {
+				gap = 500 * time.Millisecond
+			}
+			if age > gap {
 				_ = ep.writeBytes(inf.data)
 				inf.sentAt = now
 				inf.retries++
-				if inf.retries >= 3 {
+				if inf.retries == 3 || inf.retries == 10 {
 					lost = true
 				}
 			}

@@ -283,6 +283,18 @@ func (a *Agent) openDesktop(data re2.OpenDesktopPayload) error {
 		return errString("desktop capture timeout")
 	}
 	w, h := first.Img.Bounds().Dx(), first.Img.Bounds().Dy()
+	// Honor client max size so the first IDR does not explode into 60+ UDP parts.
+	if maxW > 0 && w > maxW || maxH > 0 && h > maxH {
+		tw, th := w, h
+		if maxW > 0 && tw > maxW {
+			tw = maxW
+		}
+		if maxH > 0 && th > maxH {
+			th = maxH
+		}
+		first.Img = desktop.ScaleExact(first.Img, tw, th)
+		w, h = tw, th
+	}
 	enc, err := desktop.NewEncoderBitrate(w, h, fps, bitrate)
 	if err != nil {
 		cancel()
@@ -437,6 +449,7 @@ func (a *Agent) desktopPump(frames <-chan desktop.Frame, first desktop.Frame, si
 		abr := a.deskABR
 		fid := a.deskFrameID
 		a.deskFrameID++
+		deviceID := a.id.DeviceID
 		a.mu.Unlock()
 		if enc == nil || sess == nil || f.Img == nil {
 			return
@@ -454,11 +467,35 @@ func (a *Agent) desktopPump(frames <-chan desktop.Frame, first desktop.Frame, si
 			if th > srcH {
 				th = srcH
 			}
+			// Keyframes over lossy volunteer UDP must stay small: ~60 parts ≈ black screen.
+			if forceKey {
+				if tw <= 0 || tw > 960 {
+					tw = 960
+				}
+				if th <= 0 || th > 540 {
+					th = 540
+				}
+				if tbr <= 0 || tbr > 800 {
+					tbr = 800
+				}
+			}
 			if tw > 0 && th > 0 && (srcW != tw || srcH != th) {
 				f.Img = desktop.ScaleExact(f.Img, tw, th)
 			}
 			if rc, ok := enc.(desktop.Reconfigurer); ok {
 				_ = rc.Reconfigure(tw, th, tfps, tbr)
+			}
+		} else if forceKey {
+			srcW, srcH := f.Img.Bounds().Dx(), f.Img.Bounds().Dy()
+			tw, th := srcW, srcH
+			if tw > 960 {
+				tw = 960
+			}
+			if th > 540 {
+				th = 540
+			}
+			if tw != srcW || th != srcH {
+				f.Img = desktop.ScaleExact(f.Img, tw, th)
 			}
 		}
 		annexB, err := enc.Encode(f, forceKey)
@@ -469,24 +506,38 @@ func (a *Agent) desktopPump(frames <-chan desktop.Frame, first desktop.Frame, si
 		if forceKey {
 			flags = re2.VideoFlagKeyFrame
 		}
-		parts := re2.FragmentNAL(sid, fid, flags, annexB, reudp.MaxPayload-64)
-		// Keyframes are large (~dozens of UDP parts). Unreliable loss of any
-		// part leaves the client unable to assemble the first picture → black screen.
-		// Send IDR/key parts on the reliable REUDP path; P-frames stay unreliable.
-		reliable := forceKey
-		for _, part := range parts {
+		// Budget Noise tag (16) + EncodeInner (1) + margin inside MaxPayload=1200.
+		parts := re2.FragmentNAL(sid, fid, flags, annexB, reudp.MaxPayload-96)
+		// Do NOT SendReliable multi-part IDRs: one lost seq HOL-blocks the App
+		// recvBuf forever (symptoms: only part0, no assembled frame). Keep
+		// video on unreliable UDP; duplicate key parts as cheap redundancy.
+		dup := 1
+		if forceKey {
+			dup = 2
+			i18n.Log("log.video_keyframe", fid, len(parts), len(annexB))
+		}
+		for pi, part := range parts {
 			ct, err := sess.Encrypt(re2.EncodeInner(re2.MsgVideo, part))
 			if err != nil {
+				log.Printf("video encrypt frame=%d part=%d/%d: %v", fid, pi, len(parts), err)
 				return
 			}
-			if ep != nil && useUDP {
-				if reliable {
-					_ = ep.SendReliable(ct)
-				} else {
-					_ = ep.SendUnreliable(ct)
+			if len(ct) > reudp.MaxPayload {
+				log.Printf("video part too large after encrypt frame=%d part=%d/%d ct=%d (>%d)",
+					fid, pi, len(parts), len(ct), reudp.MaxPayload)
+				return
+			}
+			for d := 0; d < dup; d++ {
+				var sendErr error
+				if ep != nil && useUDP {
+					sendErr = ep.SendUnreliable(ct)
+				} else if conn != nil {
+					sendErr = conn.WriteFrame(re2.Frame{Type: re2.TypeTunnel, RouteID: deviceID, Payload: ct})
 				}
-			} else if conn != nil {
-				_ = conn.WriteFrame(re2.Frame{Type: re2.TypeTunnel, RouteID: a.id.DeviceID, Payload: ct})
+				if sendErr != nil {
+					log.Printf("video send frame=%d part=%d/%d dup=%d: %v", fid, pi, len(parts), d, sendErr)
+					return
+				}
 			}
 		}
 	}

@@ -94,6 +94,7 @@ Built-in IP echo defaults:
 	"log.re2_unknown_inner":    "re2 unknown inner type=%d",
 	"log.reudp_assoc_warn":     "reudp assoc warning: %v (continuing on wss)",
 	"log.reudp_associated":     "reudp associated device=%s hint=%s",
+	"log.video_keyframe":       "video keyframe id=%d parts=%d annexB=%d (unreliable×2)",
 	"log.reudp_recv":           "reudp recv: %v",
 	"log.session_idle":         "session idle timeout (%s)",
 	"log.session_read":         "session %s read: %v",

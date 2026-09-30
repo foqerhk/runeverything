@@ -94,6 +94,7 @@ var zh = map[string]string{
 	"log.re2_unknown_inner":    "re2 未知内层类型=%d",
 	"log.reudp_assoc_warn":     "reudp 关联警告: %v（继续使用 wss）",
 	"log.reudp_associated":     "reudp 已关联 device=%s hint=%s",
+	"log.video_keyframe":       "视频关键帧 id=%d parts=%d annexB=%d（不可靠×2）",
 	"log.reudp_recv":           "reudp 接收: %v",
 	"log.session_idle":         "会话空闲超时（%s）",
 	"log.session_read":         "会话 %s 读取: %v",
