@@ -120,6 +120,7 @@ Built-in IP echo defaults:
 	"pair.device":    "Device: %s (%s)",
 	"pair.relay":     "Relay:  %s",
 	"pair.udp":       "UDP:    %s",
+	"pair.lan":       "LAN:    %s",
 	"pair.proto":     "Proto:  v%d",
 	"pair.noise":     "Noise:  %s…",
 	"pair.expires":   "Expires: %s",

@@ -300,6 +300,7 @@ func udpFromRelayURL(relay string) string {
 func (a *Agent) offerPairRE2(print, rotate bool) error {
 	noisePub := identity.NoisePublicB64URL(a.noiseKP)
 	udp := a.udpHostPort
+	lan := a.lanPairingCandidates()
 
 	var p *protocol.PairingPayload
 	var token string
@@ -314,6 +315,7 @@ func (a *Agent) offerPairRE2(print, rotate bool) error {
 			ExpiresAt:    a.pairingExpiresAt,
 			NoisePub:     noisePub,
 			UDP:          udp,
+			LAN:          lan,
 		}
 	} else {
 		var err error
@@ -326,6 +328,7 @@ func (a *Agent) offerPairRE2(print, rotate bool) error {
 				NoisePub: noisePub,
 				Version:  protocol.Version,
 				UDP:      udp,
+				LAN:      lan,
 			},
 		)
 		if err != nil {

@@ -42,6 +42,60 @@ func IsPrivateOrLocalIP(ip net.IP) bool {
 	return ip.IsPrivate()
 }
 
+// IsLANIP is true for RFC1918 / ULA private addresses (excludes loopback & link-local).
+func IsLANIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	return ip.IsPrivate()
+}
+
+// LocalLANIPv4s returns up, non-loopback IPv4 addresses on private LANs (RFC1918).
+func LocalLANIPv4s() []net.IP {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []net.IP
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		name := strings.ToLower(iface.Name)
+		if strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") ||
+			strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "virbr") ||
+			strings.HasPrefix(name, "cni") || strings.HasPrefix(name, "flannel") ||
+			strings.HasPrefix(name, "awdl") || strings.HasPrefix(name, "llw") {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil {
+				continue
+			}
+			ip4 := ip.To4()
+			if ip4 == nil || !IsLANIP(ip4) {
+				continue
+			}
+			out = append(out, ip4)
+		}
+	}
+	return out
+}
+
 // LocalPublicIPs returns non-private IPv4/IPv6 addresses on up interfaces.
 func LocalPublicIPs() []net.IP {
 	ifaces, err := net.Interfaces()

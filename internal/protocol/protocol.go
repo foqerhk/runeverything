@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 // Version is the shipping pairing / QR protocol version (RE2.1 + UDP desktop).
@@ -19,14 +20,15 @@ const (
 
 // PairingPayload is encoded into the QR code / deep link (JSON).
 type PairingPayload struct {
-	V            int    `json:"v"`
-	Relay        string `json:"relay"`
-	DeviceID     string `json:"device_id"`
-	PairingToken string `json:"pairing_token"`
-	Name         string `json:"name"`
-	ExpiresAt    int64  `json:"expires_at"`
-	NoisePub     string `json:"noise_pub,omitempty"`
-	UDP          string `json:"udp,omitempty"` // host:port REUDP data plane
+	V            int      `json:"v"`
+	Relay        string   `json:"relay"`
+	DeviceID     string   `json:"device_id"`
+	PairingToken string   `json:"pairing_token"`
+	Name         string   `json:"name"`
+	ExpiresAt    int64    `json:"expires_at"`
+	NoisePub     string   `json:"noise_pub,omitempty"`
+	UDP          string   `json:"udp,omitempty"` // host:port REUDP data plane (usually relay)
+	LAN          []string `json:"lan,omitempty"` // host:port on local LAN for same-subnet P2P
 }
 
 func (p PairingPayload) DeepLink() string {
@@ -41,5 +43,9 @@ func (p PairingPayload) DeepLink() string {
 	if p.UDP != "" {
 		q.Set("udp", p.UDP)
 	}
+	if len(p.LAN) > 0 {
+		q.Set("lan", strings.Join(p.LAN, ","))
+	}
 	return "koko://pair?" + q.Encode()
 }
+

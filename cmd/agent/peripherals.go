@@ -12,6 +12,7 @@ import (
 
 	"github.com/foqerhk/runeverything/internal/audit"
 	"github.com/foqerhk/runeverything/internal/desktop"
+	"github.com/foqerhk/runeverything/internal/netutil"
 	"github.com/foqerhk/runeverything/internal/re2"
 )
 
@@ -259,6 +260,29 @@ func (a *Agent) localUDPCandidates() []string {
 			} else {
 				out = append(out, ip.String()+":0")
 			}
+		}
+	}
+	return out
+}
+
+// lanPairingCandidates returns RFC1918 IPv4 host:port entries for the QR so a
+// same-LAN scanner can prefer direct UDP without waiting on relay hole-punch.
+func (a *Agent) lanPairingCandidates() []string {
+	port := 0
+	a.mu.Lock()
+	if a.udpEP != nil {
+		if ua, ok := a.udpEP.LocalAddr().(*net.UDPAddr); ok && ua != nil {
+			port = ua.Port
+		}
+	}
+	a.mu.Unlock()
+	ips := netutil.LocalLANIPv4s()
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if port > 0 {
+			out = append(out, net.JoinHostPort(ip.String(), itoaPort(port)))
+		} else {
+			out = append(out, ip.String()+":0")
 		}
 	}
 	return out

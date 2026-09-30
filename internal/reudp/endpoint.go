@@ -39,7 +39,9 @@ func Dial(relayHostPort string) (*Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := net.DialUDP("udp", nil, raddr)
+	// Unconnected ListenUDP so same-LAN peers can hole-punch / REHP1 against
+	// this port (DialUDP would drop packets not from the relay).
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: 0})
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +122,7 @@ func (ep *Endpoint) writeBytes(b []byte) error {
 	ep.mu.Lock()
 	direct := ep.directConn
 	prefer := ep.preferDirect
+	relay := ep.relayAddr
 	ep.mu.Unlock()
 	if prefer && direct != nil {
 		_, err := direct.Write(b)
@@ -130,6 +133,10 @@ func (ep *Endpoint) writeBytes(b []byte) error {
 		ep.mu.Lock()
 		ep.preferDirect = false
 		ep.mu.Unlock()
+	}
+	if relay != nil {
+		_, err := ep.conn.WriteToUDP(b, relay)
+		return err
 	}
 	_, err := ep.conn.Write(b)
 	return err
@@ -271,7 +278,7 @@ func (ep *Endpoint) readLoop() {
 func (ep *Endpoint) readLoopConn(conn *net.UDPConn) {
 	buf := make([]byte, MaxPacket+64)
 	for {
-		n, err := conn.Read(buf)
+		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			ep.mu.Lock()
 			closed := ep.closed
@@ -281,6 +288,11 @@ func (ep *Endpoint) readLoopConn(conn *net.UDPConn) {
 				close(ep.incoming)
 			}
 			return
+		}
+		// Same-LAN hole-punch probes (REHP1|token) — reply so PreferDirect can latch.
+		if n >= 6 && string(buf[:6]) == "REHP1|" && addr != nil {
+			_, _ = conn.WriteToUDP([]byte("REHP1|pong"), addr)
+			continue
 		}
 		pkt, err := Decode(buf[:n])
 		if err != nil {

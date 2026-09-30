@@ -10,6 +10,7 @@ import (
 func TestNewPayloadOptsRE2(t *testing.T) {
 	p, token, err := NewPayloadOpts("ws://127.0.0.1:8787/re2", "dev1", "box", DefaultTTL, Options{
 		NoisePub: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		LAN:      []string{"192.168.1.8:41234"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -23,9 +24,15 @@ func TestNewPayloadOptsRE2(t *testing.T) {
 	if p.NoisePub == "" {
 		t.Fatal("missing noise_pub")
 	}
+	if len(p.LAN) != 1 || p.LAN[0] != "192.168.1.8:41234" {
+		t.Fatalf("lan=%v", p.LAN)
+	}
 	link := p.DeepLink()
 	if !strings.Contains(link, "noise_pub=") {
 		t.Fatalf("deep link missing noise_pub: %s", link)
+	}
+	if !strings.Contains(link, "lan=") {
+		t.Fatalf("deep link missing lan: %s", link)
 	}
 }
 

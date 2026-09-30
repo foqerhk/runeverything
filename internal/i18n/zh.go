@@ -120,6 +120,7 @@ var zh = map[string]string{
 	"pair.device":    "设备: %s（%s）",
 	"pair.relay":     "中继: %s",
 	"pair.udp":       "UDP:  %s",
+	"pair.lan":       "LAN:  %s",
 	"pair.proto":     "协议: v%d",
 	"pair.noise":     "Noise: %s…",
 	"pair.expires":   "过期: %s",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/foqerhk/runeverything/internal/auth"
@@ -16,9 +17,10 @@ const DefaultTTL = 10 * time.Minute
 
 // Options for building a pairing payload.
 type Options struct {
-	NoisePub string // agent static public key (base64url)
-	Version  int    // ignored; always protocol.Version
-	UDP      string // host:port REUDP data plane
+	NoisePub string   // agent static public key (base64url)
+	Version  int      // ignored; always protocol.Version
+	UDP      string   // host:port REUDP data plane
+	LAN      []string // LAN host:port candidates for same-subnet P2P
 }
 
 func NewPayload(relay, deviceID, name string, ttl time.Duration) (*protocol.PairingPayload, string, error) {
@@ -41,6 +43,7 @@ func NewPayloadOpts(relay, deviceID, name string, ttl time.Duration, opt Options
 		ExpiresAt:    exp,
 		NoisePub:     opt.NoisePub,
 		UDP:          opt.UDP,
+		LAN:          append([]string(nil), opt.LAN...),
 	}
 	return p, token, nil
 }
@@ -61,6 +64,9 @@ func PrintQR(p *protocol.PairingPayload) error {
 	fmt.Fprintln(os.Stdout, i18n.T("pair.relay", p.Relay))
 	if p.UDP != "" {
 		fmt.Fprintln(os.Stdout, i18n.T("pair.udp", p.UDP))
+	}
+	if len(p.LAN) > 0 {
+		fmt.Fprintln(os.Stdout, i18n.T("pair.lan", strings.Join(p.LAN, ", ")))
 	}
 	fmt.Fprintln(os.Stdout, i18n.T("pair.proto", p.V))
 	if p.NoisePub != "" {
