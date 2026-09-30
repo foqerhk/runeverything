@@ -8,7 +8,7 @@ var en = map[string]string{
 
 Usage:
   runeverything [run]     Connect to relay /re2, print pairing QR, serve PTY sessions
-  runeverything tray      Windows: system tray agent (QR / autostart / quit)
+  runeverything tray      Menu bar / system tray agent (QR / copy link / autostart / quit)
   runeverything qr        Show current pairing QR (reads last_pairing.json; safe while run is up)
   runeverything pair      Mint a new pairing token on the relay and print QR (extra connection; may kick a running agent)
   runeverything status    Show device identity and config
@@ -137,22 +137,33 @@ Built-in IP echo defaults:
 	"desktop.timeout_denied":  "(timeout — denied)",
 	"desktop.stdin_hint":      " [y/N]: ",
 
-	"tray.tooltip":            "RunEverything Agent",
-	"tray.tooltip_running":    "RunEverything — running",
-	"tray.tooltip_failed":     "RunEverything (failed to start)",
-	"tray.show_qr":            "Show pairing QR",
-	"tray.show_qr_tip":        "Open QR code image",
-	"tray.copy_link":          "Copy pair link",
-	"tray.copy_link_tip":      "Copy deep link to clipboard",
-	"tray.open_folder":        "Open data folder",
-	"tray.open_folder_tip":    "Open ~/.runeverything",
-	"tray.start_windows":      "Start with Windows",
-	"tray.start_windows_tip":  "Logon scheduled task",
-	"tray.quit":               "Quit",
-	"tray.quit_tip":           "Stop agent",
-	"tray.not_running":        "Agent is not running",
-	"tray.pair_failed":        "Pairing failed: %s",
-	"tray.qr_opened":          "QR opened; pair link copied",
-	"tray.link_copied":        "Pair link copied",
-	"tray.only_windows":       "tray mode is only available on Windows; use: runeverything run",
+	"tray.tooltip":              "RunEverything Agent",
+	"tray.tooltip_running":      "RunEverything — running",
+	"tray.tooltip_failed":       "RunEverything (failed to start)",
+	"tray.tooltip_reconnecting": "RunEverything — reconnecting…",
+	"tray.show_qr":              "Show pairing QR",
+	"tray.show_qr_tip":          "Open QR code image",
+	"tray.copy_link":            "Copy pair link",
+	"tray.copy_link_tip":        "Copy deep link to clipboard",
+	"tray.open_folder":          "Open data folder",
+	"tray.open_folder_tip":      "Open ~/.runeverything",
+	"tray.check_perms":          "Check host permissions…",
+	"tray.check_perms_tip":      "Screen Recording / Accessibility",
+	"tray.autostart":            "Start at login",
+	"tray.autostart_tip":        "Launch tray agent when you log in",
+	"tray.autostart_on":         "Autostart enabled",
+	"tray.autostart_off":        "Autostart disabled",
+	"tray.autostart_fail":       "Autostart failed: %s",
+	"tray.start_windows":        "Start with Windows",
+	"tray.start_windows_tip":    "Logon scheduled task",
+	"tray.quit":                 "Quit",
+	"tray.quit_tip":             "Stop agent",
+	"tray.not_running":          "Agent is not running",
+	"tray.pair_failed":          "Pairing failed: %s",
+	"tray.qr_opened":            "QR opened; pair link copied",
+	"tray.link_copied":          "Pair link copied",
+	"tray.need_desktop":         "Tray needs a graphical desktop session (run: runeverything tray)",
+	"tray.unsupported":          "Tray mode is not supported on this OS; use: runeverything run",
+	"tray.perms_linux_hint":     "Linux desktop permissions vary by distro; ensure a logged-in graphical session.",
+	"tray.only_windows":         "tray mode is only available on Windows; use: runeverything run",
 }

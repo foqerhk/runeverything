@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin && !linux
 
 package main
 
@@ -10,6 +10,6 @@ import (
 )
 
 func cmdTray() {
-	fmt.Fprintln(os.Stderr, i18n.T("tray.only_windows"))
+	fmt.Fprintln(os.Stderr, i18n.T("tray.unsupported"))
 	os.Exit(2)
 }

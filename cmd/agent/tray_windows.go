@@ -3,19 +3,11 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"os"
-	"path/filepath"
-	"time"
 
-	"github.com/foqerhk/runeverything/internal/desktop"
 	"github.com/foqerhk/runeverything/internal/i18n"
 	"github.com/foqerhk/runeverything/internal/identity"
-	"github.com/foqerhk/runeverything/internal/keepalive"
-	"github.com/foqerhk/runeverything/internal/pairing"
-	"github.com/foqerhk/runeverything/internal/protocol"
-	ptyx "github.com/foqerhk/runeverything/internal/pty"
 	"github.com/foqerhk/runeverything/internal/winutil"
 	"github.com/getlantern/systray"
 )
@@ -45,7 +37,7 @@ func onTrayReady() {
 		systray.SetTooltip(i18n.T("tray.tooltip_failed"))
 	} else {
 		systray.SetTooltip(i18n.T("tray.tooltip_running"))
-		_ = refreshPairSilent(agent)
+		// Pair offer runs inside runLoopRE2 after connect (re2Conn not ready yet).
 	}
 
 	go func() {
@@ -83,14 +75,14 @@ func onTrayReady() {
 				if winutil.LogonTaskExists() {
 					_ = winutil.UnregisterLogonTask()
 					mAuto.Uncheck()
-					winutil.NotifyBalloon("RunEverything", "Autostart disabled")
+					winutil.NotifyBalloon("RunEverything", i18n.T("tray.autostart_off"))
 				} else {
 					if err := winutil.RegisterLogonTask(exe); err != nil {
-						winutil.NotifyBalloon("RunEverything", "Autostart failed: "+err.Error())
+						winutil.NotifyBalloon("RunEverything", i18n.T("tray.autostart_fail", err.Error()))
 						continue
 					}
 					mAuto.Check()
-					winutil.NotifyBalloon("RunEverything", "Autostart enabled")
+					winutil.NotifyBalloon("RunEverything", i18n.T("tray.autostart_on"))
 				}
 			case <-mQuit.ClickedCh:
 				if stopAwake != nil {
@@ -104,91 +96,9 @@ func onTrayReady() {
 			case err := <-errCh:
 				if err != nil {
 					log.Printf("tray agent: %v", err)
-					systray.SetTooltip("RunEverything — reconnecting…")
+					systray.SetTooltip(i18n.T("tray.tooltip_reconnecting"))
 				}
 			}
 		}
 	}()
-}
-
-func startTrayAgent() (*Agent, func(), <-chan error) {
-	errCh := make(chan error, 4)
-	id, err := identity.LoadOrCreate()
-	if err != nil {
-		errCh <- err
-		return nil, nil, errCh
-	}
-	cfg, err := identity.LoadConfig()
-	if err != nil {
-		errCh <- err
-		return nil, nil, errCh
-	}
-	applyNetworkPrefs(cfg)
-	discovered := applyRelayDiscovery(cfg, "")
-	finalizePublicRelay(cfg, discovered)
-	applyRE2Paths(cfg)
-	_ = identity.SaveConfig(cfg)
-
-	a := &Agent{
-		id:          id,
-		cfg:         cfg,
-		sessions:    make(map[string]*ptyx.Session),
-		printQR:     false,
-		clip:        desktop.NewClipboardHub(),
-		xferNames:   make(map[string]string),
-		sessionIdle: envDuration("RE_SESSION_IDLE", 30*time.Minute),
-	}
-	stopAwake := keepalive.Start()
-	go func() {
-		backoff := time.Second
-		for {
-			err := a.runLoopRE2()
-			select {
-			case errCh <- err:
-			default:
-			}
-			time.Sleep(backoff)
-			if backoff < 30*time.Second {
-				backoff *= 2
-			}
-		}
-	}()
-	return a, stopAwake, errCh
-}
-
-func refreshPairSilent(a *Agent) error {
-	return a.offerPairRE2(false, true)
-}
-
-func showPairQR(a *Agent) (pngPath, deepLink string, err error) {
-	// Always rotate when the user asks for a QR so the shown code matches the relay.
-	if err := a.offerPairRE2(false, true); err != nil {
-		return "", "", err
-	}
-	p, err := loadLastPairing()
-	if err != nil {
-		return "", "", err
-	}
-	home, _ := identity.HomeDir()
-	path, err := pairing.WriteQRPNG(p, home)
-	if err != nil {
-		return "", "", err
-	}
-	return path, p.DeepLink(), nil
-}
-
-func loadLastPairing() (*protocol.PairingPayload, error) {
-	home, err := identity.HomeDir()
-	if err != nil {
-		return nil, err
-	}
-	b, err := os.ReadFile(filepath.Join(home, "last_pairing.json"))
-	if err != nil {
-		return nil, err
-	}
-	var p protocol.PairingPayload
-	if err := json.Unmarshal(b, &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
 }

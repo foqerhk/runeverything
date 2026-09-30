@@ -8,7 +8,7 @@ var zh = map[string]string{
 
 用法:
   runeverything [run]     连接中继 /re2，打印配对二维码，提供 PTY 会话
-  runeverything tray      Windows：托盘常驻（二维码 / 开机自启 / 退出）
+  runeverything tray      状态栏/托盘常驻（显示二维码 / 复制链接 / 开机自启 / 退出）
   runeverything qr        显示当前配对二维码（读 last_pairing.json，不打断已在跑的 run）
   runeverything pair      向中继刷新配对令牌并打印二维码（另开连接，可能挤掉正在跑的 agent）
   runeverything status    显示设备身份与配置
@@ -140,12 +140,20 @@ var zh = map[string]string{
 	"tray.tooltip":            "RunEverything Agent",
 	"tray.tooltip_running":    "RunEverything — 运行中",
 	"tray.tooltip_failed":     "RunEverything（启动失败）",
+	"tray.tooltip_reconnecting": "RunEverything — 重连中…",
 	"tray.show_qr":            "显示配对二维码",
 	"tray.show_qr_tip":        "打开二维码图片",
 	"tray.copy_link":          "复制配对链接",
 	"tray.copy_link_tip":      "复制深链到剪贴板",
 	"tray.open_folder":        "打开数据目录",
 	"tray.open_folder_tip":    "打开 ~/.runeverything",
+	"tray.check_perms":        "检查本机权限…",
+	"tray.check_perms_tip":    "屏幕录制 / 辅助功能",
+	"tray.autostart":          "登录时启动",
+	"tray.autostart_tip":      "开机/登录后自动打开托盘 Agent",
+	"tray.autostart_on":       "已开启登录自启",
+	"tray.autostart_off":      "已关闭登录自启",
+	"tray.autostart_fail":     "设置自启失败: %s",
 	"tray.start_windows":      "开机自启",
 	"tray.start_windows_tip":  "登录计划任务",
 	"tray.quit":               "退出",
@@ -154,5 +162,8 @@ var zh = map[string]string{
 	"tray.pair_failed":        "配对失败: %s",
 	"tray.qr_opened":          "已打开二维码；配对链接已复制",
 	"tray.link_copied":        "配对链接已复制",
+	"tray.need_desktop":       "托盘需要图形桌面会话（请在已登录的桌面环境运行 runeverything tray）",
+	"tray.unsupported":        "当前系统不支持托盘模式；请使用: runeverything run",
+	"tray.perms_linux_hint":   "Linux 桌面权限因发行版而异；请确保会话已登录且允许远程/屏幕共享相关能力。",
 	"tray.only_windows":       "托盘模式仅支持 Windows；请使用: runeverything run",
 }
