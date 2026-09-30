@@ -384,6 +384,9 @@ type Agent struct {
 	relativeMouse bool
 	lastActivity time.Time
 	sessionIdle  time.Duration
+
+	// Optional UI hook (tray): fired when remote desktop opens/closes.
+	onDesktopChange func(active bool)
 }
 
 func (a *Agent) closeAll() {

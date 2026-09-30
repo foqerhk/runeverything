@@ -300,9 +300,13 @@ func (a *Agent) openDesktop(data re2.OpenDesktopPayload) error {
 	a.deskEnc = enc
 	a.deskSID = data.SessionID
 	a.deskABR = abr
+	notify := a.onDesktopChange
 	a.mu.Unlock()
 	a.touchActivity()
 	audit.Log("desktop_open", data.SessionID)
+	if notify != nil {
+		notify(true)
+	}
 
 	go a.desktopPump(frames, first, data.SessionID, fps)
 	go a.cursorPump(data.SessionID, ctx)
@@ -492,6 +496,8 @@ func (a *Agent) closeDesktop() {
 	inj := a.deskInj
 	enc := a.deskEnc
 	player := a.audioPlayer
+	wasActive := a.deskSID != ""
+	notify := a.onDesktopChange
 	a.deskCancel = nil
 	a.deskCap = nil
 	a.deskInj = nil
@@ -516,7 +522,12 @@ func (a *Agent) closeDesktop() {
 		_ = player.Close()
 	}
 	_ = desktop.SetPrivacyBlank(false)
-	audit.Log("desktop_close", "")
+	if wasActive {
+		audit.Log("desktop_close", "")
+		if notify != nil {
+			notify(false)
+		}
+	}
 }
 
 func (a *Agent) handleDesktopInput(mt byte, body []byte) error {

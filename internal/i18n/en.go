@@ -167,4 +167,6 @@ Built-in IP echo defaults:
 	"tray.perms_linux_hint":     "Linux desktop permissions vary by distro; ensure a logged-in graphical session.",
 	"tray.only_windows":         "tray mode is only available on Windows; use: runeverything run",
 	"singleton.busy":            "Another RunEverything agent is already running (quit it from the menu bar / tray, or wait a moment)",
+	"tray.controlled":           "Being controlled…",
+	"tray.tooltip_controlled":   "RunEverything — being controlled",
 }

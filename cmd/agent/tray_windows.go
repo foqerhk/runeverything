@@ -37,7 +37,10 @@ func onTrayReady() {
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem(i18n.T("tray.quit"), i18n.T("tray.quit_tip"))
 
-	agent, stopAwake, errCh := startTrayAgent()
+	var marquee trayMarquee
+	agent, stopAwake, errCh := startTrayAgent(func(active bool) {
+		marquee.SetActive(active)
+	})
 	if agent == nil {
 		systray.SetTooltip(i18n.T("tray.tooltip_failed"))
 	} else {

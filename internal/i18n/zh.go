@@ -167,4 +167,6 @@ var zh = map[string]string{
 	"tray.perms_linux_hint":   "Linux 桌面权限因发行版而异；请确保会话已登录且允许远程/屏幕共享相关能力。",
 	"tray.only_windows":       "托盘模式仅支持 Windows；请使用: runeverything run",
 	"singleton.busy":          "已有 RunEverything Agent 在运行（请从菜单栏/托盘退出，或稍候再试）",
+	"tray.controlled":         "被控制中...",
+	"tray.tooltip_controlled": "RunEverything — 被控制中",
 }

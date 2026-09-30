@@ -14,7 +14,7 @@ import (
 	ptyx "github.com/foqerhk/runeverything/internal/pty"
 )
 
-func startTrayAgent() (*Agent, func(), <-chan error) {
+func startTrayAgent(onDesktop func(active bool)) (*Agent, func(), <-chan error) {
 	errCh := make(chan error, 4)
 	id, err := identity.LoadOrCreate()
 	if err != nil {
@@ -40,6 +40,9 @@ func startTrayAgent() (*Agent, func(), <-chan error) {
 		clip:        desktop.NewClipboardHub(),
 		xferNames:   make(map[string]string),
 		sessionIdle: envDuration("RE_SESSION_IDLE", 30*time.Minute),
+	}
+	if onDesktop != nil {
+		a.onDesktopChange = onDesktop
 	}
 	stopAwake := keepalive.Start()
 	go func() {

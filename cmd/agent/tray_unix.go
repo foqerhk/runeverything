@@ -61,7 +61,10 @@ func onUnixTrayReady() {
 		logHostPermissions(desktop.EnsureHostPermissions())
 	}
 
-	agent, stopAwake, errCh := startTrayAgent()
+	var marquee trayMarquee
+	agent, stopAwake, errCh := startTrayAgent(func(active bool) {
+		marquee.SetActive(active)
+	})
 	if agent == nil {
 		systray.SetTooltip(i18n.T("tray.tooltip_failed"))
 		trayNotify(i18n.T("desktop.confirm_title"), i18n.T("tray.tooltip_failed"))
