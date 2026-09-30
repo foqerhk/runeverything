@@ -60,13 +60,14 @@ func detectLocked() Lang {
 	if v := strings.TrimSpace(os.Getenv("RE_LANG")); v != "" {
 		return normalize(v)
 	}
+	// macOS GUI / LaunchAgent often lack LANG=zh_*; AppleLanguages is authoritative.
+	if platformPrefersChinese() {
+		return Zh
+	}
 	for _, key := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 			return normalize(v)
 		}
-	}
-	if platformPrefersChinese() {
-		return Zh
 	}
 	return En
 }
