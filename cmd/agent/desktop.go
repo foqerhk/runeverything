@@ -268,7 +268,14 @@ func (a *Agent) openDesktop(data re2.OpenDesktopPayload) error {
 	}
 	var first desktop.Frame
 	select {
-	case first = <-frames:
+	case f, ok := <-frames:
+		if !ok || f.Img == nil {
+			cancel()
+			_ = cap.Close()
+			_ = inj.Close()
+			return errString("desktop capture ended without frame")
+		}
+		first = f
 	case <-time.After(5 * time.Second):
 		cancel()
 		_ = cap.Close()
@@ -463,13 +470,21 @@ func (a *Agent) desktopPump(frames <-chan desktop.Frame, first desktop.Frame, si
 			flags = re2.VideoFlagKeyFrame
 		}
 		parts := re2.FragmentNAL(sid, fid, flags, annexB, reudp.MaxPayload-64)
+		// Keyframes are large (~dozens of UDP parts). Unreliable loss of any
+		// part leaves the client unable to assemble the first picture → black screen.
+		// Send IDR/key parts on the reliable REUDP path; P-frames stay unreliable.
+		reliable := forceKey
 		for _, part := range parts {
 			ct, err := sess.Encrypt(re2.EncodeInner(re2.MsgVideo, part))
 			if err != nil {
 				return
 			}
 			if ep != nil && useUDP {
-				_ = ep.SendUnreliable(ct)
+				if reliable {
+					_ = ep.SendReliable(ct)
+				} else {
+					_ = ep.SendUnreliable(ct)
+				}
 			} else if conn != nil {
 				_ = conn.WriteFrame(re2.Frame{Type: re2.TypeTunnel, RouteID: a.id.DeviceID, Payload: ct})
 			}
