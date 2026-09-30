@@ -142,6 +142,3 @@ func onUnixTrayReady() {
 		}
 	}()
 }
-
-// trayCheckPermissions kept as a thin alias for older call sites.
-func trayCheckPermissions() { trayShowPermissionsPanel() }
