@@ -14,4 +14,10 @@ func CheckHostPermissions() HostPermissions {
 
 func EnsureHostPermissions() HostPermissions { return CheckHostPermissions() }
 
+func RequestScreenRecording() bool { return true }
+
+func RequestAccessibility() bool { return true }
+
+func OpenPrivacySettings(kind string) error { return nil }
+
 func (p HostPermissions) Missing() []string { return nil }

@@ -54,16 +54,46 @@ func CheckHostPermissions() HostPermissions {
 	}
 }
 
+// RequestScreenRecording triggers the system Screen Recording prompt when possible.
+func RequestScreenRecording() bool {
+	_ = C.re_screen_request()
+	return C.re_screen_preflight() == 1
+}
+
+// RequestAccessibility triggers the Accessibility trust prompt when possible.
+func RequestAccessibility() bool {
+	_ = C.re_ax_trusted(1)
+	return C.re_ax_trusted(0) == 1
+}
+
+// OpenPrivacySettings opens the matching macOS Privacy & Security pane.
+func OpenPrivacySettings(kind string) error {
+	url := ""
+	switch kind {
+	case "screen", "screen_recording":
+		url = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+	case "accessibility", "ax":
+		url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+	case "microphone", "mic":
+		url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+	case "camera":
+		url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+	default:
+		url = "x-apple.systempreferences:com.apple.preference.security"
+	}
+	return exec.Command("open", url).Start()
+}
+
 // EnsureHostPermissions requests Screen Recording + Accessibility when missing,
-// logs guidance, and optionally opens System Settings (unless RE_OPEN_PRIVACY=0).
+// and optionally opens System Settings (unless RE_OPEN_PRIVACY=0).
 func EnsureHostPermissions() HostPermissions {
 	p := CheckHostPermissions()
 	if !p.ScreenRecording {
-		_ = C.re_screen_request()
+		_ = RequestScreenRecording()
 		p.ScreenRecording = C.re_screen_preflight() == 1
 	}
 	if !p.Accessibility {
-		_ = C.re_ax_trusted(1)
+		_ = RequestAccessibility()
 		p.Accessibility = C.re_ax_trusted(0) == 1
 	}
 	permsOnce.Do(func() {
@@ -71,16 +101,16 @@ func EnsureHostPermissions() HostPermissions {
 			return
 		}
 		if !p.ScreenRecording {
-			_ = exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture").Start()
+			_ = OpenPrivacySettings("screen")
 		}
 		if !p.Accessibility {
-			_ = exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility").Start()
+			_ = OpenPrivacySettings("accessibility")
 		}
 	})
 	return CheckHostPermissions()
 }
 
-// MissingPermissionHints returns human-facing keys for still-denied grants.
+// Missing returns keys for still-denied required grants.
 func (p HostPermissions) Missing() []string {
 	var out []string
 	if !p.ScreenRecording {

@@ -58,7 +58,8 @@ func onUnixTrayReady() {
 	mQuit := systray.AddMenuItem(i18n.T("tray.quit"), i18n.T("tray.quit_tip"))
 
 	if runtime.GOOS == "darwin" {
-		logHostPermissions(desktop.EnsureHostPermissions())
+		logHostPermissions(desktop.CheckHostPermissions())
+		trayMaybeShowPermissionsOnFirstRun()
 	}
 
 	var marquee trayMarquee
@@ -105,7 +106,7 @@ func onUnixTrayReady() {
 				home, _ := identity.HomeDir()
 				_ = trayOpenFolder(home)
 			case <-mPerm.ClickedCh:
-				trayCheckPermissions()
+				trayShowPermissionsPanel()
 			case <-mAuto.ClickedCh:
 				exe, _ := os.Executable()
 				if trayAutostartEnabled() {
@@ -142,24 +143,5 @@ func onUnixTrayReady() {
 	}()
 }
 
-func trayCheckPermissions() {
-	if runtime.GOOS != "darwin" {
-		trayNotify(i18n.T("desktop.confirm_title"), i18n.T("tray.perms_linux_hint"))
-		return
-	}
-	p := desktop.EnsureHostPermissions()
-	logHostPermissions(p)
-	if p.ScreenRecording && p.Accessibility {
-		trayAlert(i18n.T("desktop.confirm_title"), i18n.T("log.perm_ok"))
-		return
-	}
-	msg := ""
-	if !p.ScreenRecording {
-		msg += i18n.T("log.perm_screen_need") + "\n\n"
-	}
-	if !p.Accessibility {
-		msg += i18n.T("log.perm_ax_need") + "\n\n"
-	}
-	msg += i18n.T("log.perm_mic_hint")
-	trayAlert(i18n.T("desktop.confirm_title"), msg)
-}
+// trayCheckPermissions kept as a thin alias for older call sites.
+func trayCheckPermissions() { trayShowPermissionsPanel() }
