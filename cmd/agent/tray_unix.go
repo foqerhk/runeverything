@@ -5,7 +5,9 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
 
 	"github.com/foqerhk/runeverything/internal/desktop"
 	"github.com/foqerhk/runeverything/internal/i18n"
@@ -18,18 +20,32 @@ func cmdTray() {
 		log.Println(i18n.T("tray.need_desktop"))
 		os.Exit(2)
 	}
-	// macOS menu bar / Linux status notifier need the main OS thread.
+	release, err := acquireAgentLock()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer release()
+
+	// Graceful exit on SIGTERM so a replacement instance can take the lock.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
+		systray.Quit()
+	}()
+
 	runtime.LockOSThread()
 	systray.Run(onUnixTrayReady, func() {})
 }
 
 func onUnixTrayReady() {
 	if runtime.GOOS == "darwin" {
-		systray.SetTemplateIcon(trayIconPNG, trayIconPNG)
+		// Template icon: system tints for light/dark menu bar; no title text.
+		systray.SetTemplateIcon(trayIconTemplatePNG, trayIconTemplatePNG)
 	} else {
-		systray.SetIcon(trayIconPNG)
+		systray.SetIcon(trayIconColorPNG)
 	}
-	systray.SetTitle("RE")
+	systray.SetTitle("")
 	systray.SetTooltip(i18n.T("tray.tooltip"))
 
 	mQR := systray.AddMenuItem(i18n.T("tray.show_qr"), i18n.T("tray.show_qr_tip"))

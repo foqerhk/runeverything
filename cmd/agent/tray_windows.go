@@ -13,6 +13,11 @@ import (
 )
 
 func cmdTray() {
+	release, err := acquireAgentLock()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer release()
 	winutil.FreeConsole()
 	systray.Run(onTrayReady, onTrayExit)
 }
@@ -21,7 +26,7 @@ func onTrayExit() {}
 
 func onTrayReady() {
 	systray.SetIcon(trayIconICO)
-	systray.SetTitle("RunEverything")
+	systray.SetTitle("")
 	systray.SetTooltip(i18n.T("tray.tooltip"))
 
 	mQR := systray.AddMenuItem(i18n.T("tray.show_qr"), i18n.T("tray.show_qr_tip"))

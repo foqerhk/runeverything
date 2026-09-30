@@ -280,6 +280,12 @@ func cmdRun() {
 	noQR := flag.Bool("no-qr", false, "do not print QR on start")
 	flag.Parse()
 
+	release, err := acquireAgentLock()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer release()
+
 	id, err := identity.LoadOrCreate()
 	if err != nil {
 		log.Fatal(err)
