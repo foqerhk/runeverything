@@ -83,6 +83,7 @@ func install() error {
 		// non-fatal: still usable via Start Menu
 		fmt.Fprintf(os.Stderr, "autostart warning: %v\n", err)
 	}
+	_ = installPhoneCamDriverBundle()
 
 	// default config
 	home, err := identity.EnsureHome()
@@ -94,6 +95,39 @@ func install() error {
 		}
 	}
 	return nil
+}
+
+// installPhoneCamDriverBundle copies the optional AkVirtualCamera installer next
+// to the Agent so “用手机当摄像头 → 去设置” can run it locally with UAC.
+func installPhoneCamDriverBundle() error {
+	self, _ := os.Executable()
+	cands := []string{
+		filepath.Join(filepath.Dir(self), "akvirtualcamera-windows.exe"),
+		filepath.Join(filepath.Dir(self), "akvirtualcamera", "akvirtualcamera-windows.exe"),
+		os.Getenv("RE_AKVCAM_EXE"),
+	}
+	var src string
+	for _, p := range cands {
+		if p == "" {
+			continue
+		}
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			src = p
+			break
+		}
+	}
+	if src == "" {
+		return nil
+	}
+	dstDir := filepath.Join(filepath.Dir(winutil.InstallDir()), "akvirtualcamera")
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dstDir, "akvirtualcamera-windows.exe"), data, 0o755)
 }
 
 func messageBox(title, text string, flags uint32) int {

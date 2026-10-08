@@ -25,6 +25,22 @@ func NewCongestion() *Congestion {
 	}
 }
 
+// BoostForLAN raises the initial window for PreferDirect (sub-10ms RTT).
+// 720p IDRs are still 40–80 reliable parts; start wide so the first commercial
+// OPEN does not serialize behind cwnd=8.
+func (c *Congestion) BoostForLAN() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cwnd < 128 {
+		c.cwnd = 128
+	}
+	if c.ssthresh < 256 {
+		c.ssthresh = 256
+	}
+	c.minRTT = 8 * time.Millisecond
+	c.paceGap = 500 * time.Microsecond
+}
+
 func (c *Congestion) CanSend() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

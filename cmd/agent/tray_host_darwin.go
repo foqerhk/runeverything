@@ -61,7 +61,6 @@ func trayEnableAutostart(exe string) error {
   <key>ProgramArguments</key>
   <array>
     <string>%s</string>
-    <string>tray</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

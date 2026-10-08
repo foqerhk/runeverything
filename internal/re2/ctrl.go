@@ -81,37 +81,47 @@ type ResizePayload struct {
 // Desktop session payloads (RE2.1).
 
 type OpenDesktopPayload struct {
-	SessionID   string `json:"session_id"`
-	MaxWidth    int    `json:"max_width,omitempty"`
-	MaxHeight   int    `json:"max_height,omitempty"`
-	FPS         int    `json:"fps,omitempty"`
-	Codec       string `json:"codec,omitempty"` // "h264"
-	DisplayID   int    `json:"display_id,omitempty"`
-	BitrateKbps int    `json:"bitrate_kbps,omitempty"`
-	HideCursor  bool   `json:"hide_cursor,omitempty"` // capture without OS cursor baked in
-	Password    string `json:"password,omitempty"`    // optional; checked against RE_ACCESS_PASSWORD
-	PrivacyBlank bool  `json:"privacy_blank,omitempty"` // cover local screen (exclude from capture when possible)
+	SessionID    string `json:"session_id"`
+	MaxWidth     int    `json:"max_width,omitempty"`
+	MaxHeight    int    `json:"max_height,omitempty"`
+	FPS          int    `json:"fps,omitempty"`
+	Codec        string `json:"codec,omitempty"` // "h264" | "h265"
+	DisplayID    int    `json:"display_id,omitempty"`
+	BitrateKbps  int    `json:"bitrate_kbps,omitempty"`
+	HideCursor   bool   `json:"hide_cursor,omitempty"`   // capture without OS cursor baked in
+	Password     string `json:"password,omitempty"`      // optional; checked against RE_ACCESS_PASSWORD
+	PrivacyBlank bool   `json:"privacy_blank,omitempty"` // cover local screen (exclude from capture when possible)
+	// VideoPlane=1: client supports gap-tolerant video AEAD over REUDP (best-effort).
+	VideoPlane int `json:"video_plane,omitempty"`
 }
 
 type DesktopReadyPayload struct {
-	SessionID   string          `json:"session_id"`
-	Width       int             `json:"width"`
-	Height      int             `json:"height"`
-	Codec       string          `json:"codec"`
-	FPS         int             `json:"fps,omitempty"`
-	BitrateKbps int             `json:"bitrate_kbps,omitempty"`
-	DisplayID   int             `json:"display_id,omitempty"`
-	Displays    []DisplayInfo   `json:"displays,omitempty"`
+	SessionID   string        `json:"session_id"`
+	Width       int           `json:"width"`
+	Height      int           `json:"height"`
+	Codec       string        `json:"codec"`
+	FPS         int           `json:"fps,omitempty"`
+	BitrateKbps int           `json:"bitrate_kbps,omitempty"`
+	DisplayID   int           `json:"display_id,omitempty"`
+	Displays    []DisplayInfo `json:"displays,omitempty"`
+	// Echo negotiated video plane (1 = best-effort REUDP video AEAD).
+	VideoPlane int `json:"video_plane,omitempty"`
+	// Host TCC / privacy grants (optional; older agents omit → client assumes unknown).
+	MicAuthorized    *bool `json:"mic_authorized,omitempty"`
+	CameraAuthorized *bool `json:"camera_authorized,omitempty"`
 }
 
 type DisplayInfo struct {
-	ID     int    `json:"id"`
-	Name   string `json:"name,omitempty"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	X      int    `json:"x,omitempty"`
-	Y      int    `json:"y,omitempty"`
-	Primary bool  `json:"primary,omitempty"`
+	ID       int    `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	X        int    `json:"x,omitempty"`
+	Y        int    `json:"y,omitempty"`
+	Primary  bool   `json:"primary,omitempty"`
+	Virtual  bool   `json:"virtual,omitempty"`
+	FBWidth  int    `json:"fb_width,omitempty"`
+	FBHeight int    `json:"fb_height,omitempty"`
 }
 
 type DisplaysPayload struct {
@@ -138,25 +148,37 @@ type ClipboardPayload struct {
 }
 
 type AudioPayload struct {
-	SessionID string `json:"session_id"`
-	Codec     string `json:"codec"` // opus|pcm16
-	SampleRate int   `json:"sample_rate,omitempty"`
-	Channels  int    `json:"channels,omitempty"`
-	DataB64   string `json:"data_b64"`
+	SessionID  string `json:"session_id"`
+	Codec      string `json:"codec"` // opus|pcm16
+	SampleRate int    `json:"sample_rate,omitempty"`
+	Channels   int    `json:"channels,omitempty"`
+	DataB64    string `json:"data_b64"`
 }
 
 type StatsPayload struct {
-	SessionID   string  `json:"session_id"`
-	RTTMs       int     `json:"rtt_ms"`
-	LossPct     float64 `json:"loss_pct"`
-	RecvKbps    int     `json:"recv_kbps,omitempty"`
-	DecodeFPS   float64 `json:"decode_fps,omitempty"`
-	WantKeyframe bool   `json:"want_keyframe,omitempty"`
+	SessionID     string  `json:"session_id"`
+	RTTMs         int     `json:"rtt_ms"`
+	LossPct       float64 `json:"loss_pct"`
+	RecvKbps      int     `json:"recv_kbps,omitempty"`
+	DecodeFPS     float64 `json:"decode_fps,omitempty"`
+	StreamFPS     float64 `json:"stream_fps,omitempty"`
+	JitterMs      int     `json:"jitter_ms,omitempty"`
+	DecodeDelayMs int     `json:"decode_delay_ms,omitempty"`
+	Stall         bool    `json:"stall,omitempty"`
+	WantKeyframe  bool    `json:"want_keyframe,omitempty"`
 }
 
 type KeyframeReqPayload struct {
 	SessionID string `json:"session_id"`
 	Reason    string `json:"reason,omitempty"`
+}
+
+// VideoNACKPayload repairs sparse loss in the gap-tolerant UDP video plane.
+// The agent only retains the latest keyframe, so stale frame IDs are ignored.
+type VideoNACKPayload struct {
+	SessionID string   `json:"session_id"`
+	FrameID   uint32   `json:"frame_id"`
+	Missing   []uint16 `json:"missing"`
 }
 
 type FileOfferPayload struct {
@@ -176,17 +198,17 @@ type FileChunkPayload struct {
 }
 
 type HolePunchPayload struct {
-	SessionID string `json:"session_id,omitempty"`
-	Action    string `json:"action"` // offer|answer|candidate|connected|failed
-	UDPAddr   string `json:"udp_addr,omitempty"` // host:port reflexive/local
-	Token     string `json:"token,omitempty"`
+	SessionID  string   `json:"session_id,omitempty"`
+	Action     string   `json:"action"`             // offer|answer|candidate|connected|failed
+	UDPAddr    string   `json:"udp_addr,omitempty"` // host:port reflexive/local
+	Token      string   `json:"token,omitempty"`
 	Candidates []string `json:"candidates,omitempty"` // host:port list for ICE-lite
 }
 
 type PairConfirmPayload struct {
-	DeviceID string `json:"device_id"`
+	DeviceID   string `json:"device_id"`
 	ClientName string `json:"client_name,omitempty"`
-	Approved bool   `json:"approved"`
+	Approved   bool   `json:"approved"`
 }
 
 type AuditPayload struct {
@@ -201,22 +223,26 @@ type DesktopClosePayload struct {
 }
 
 type InputMousePayload struct {
-	SessionID string  `json:"session_id"`
-	X         float64 `json:"x"`
-	Y         float64 `json:"y"`
-	Buttons   int     `json:"buttons,omitempty"`
-	Wheel     int     `json:"wheel,omitempty"`
-	WheelH    int     `json:"wheel_h,omitempty"`
-	Down      bool    `json:"down,omitempty"`
-	Up        bool    `json:"up,omitempty"`
-	Move      bool    `json:"move,omitempty"`
-	Relative  bool    `json:"relative,omitempty"` // game mode: DX/DY in pixels
-	DX        float64 `json:"dx,omitempty"`
-	DY        float64 `json:"dy,omitempty"`
+	SessionID  string  `json:"session_id"`
+	EventID    uint64  `json:"event_id,omitempty"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Buttons    int     `json:"buttons,omitempty"`
+	Wheel      int     `json:"wheel,omitempty"`
+	WheelH     int     `json:"wheel_h,omitempty"`
+	Down       bool    `json:"down,omitempty"`
+	Up         bool    `json:"up,omitempty"`
+	Move       bool    `json:"move,omitempty"`
+	Relative   bool    `json:"relative,omitempty"` // game mode: DX/DY in pixels
+	DX         float64 `json:"dx,omitempty"`
+	DY         float64 `json:"dy,omitempty"`
+	Gesture    string  `json:"gesture,omitempty"`     // "space"
+	SpaceDelta int     `json:"space_delta,omitempty"` // -1 previous Space, +1 next (incl. fullscreen)
 }
 
 type InputKeyPayload struct {
 	SessionID string `json:"session_id"`
+	EventID   uint64 `json:"event_id,omitempty"`
 	KeyCode   int    `json:"key_code,omitempty"`
 	Text      string `json:"text,omitempty"` // IME committed text
 	Down      bool   `json:"down"`
@@ -226,6 +252,7 @@ type InputKeyPayload struct {
 
 type InputTouchPayload struct {
 	SessionID string  `json:"session_id"`
+	EventID   uint64  `json:"event_id,omitempty"`
 	X         float64 `json:"x"`
 	Y         float64 `json:"y"`
 	Phase     string  `json:"phase"`
@@ -233,36 +260,36 @@ type InputTouchPayload struct {
 }
 
 type InputModePayload struct {
-	SessionID    string `json:"session_id"`
-	RelativeMouse bool  `json:"relative_mouse,omitempty"`
-	GameMode     bool   `json:"game_mode,omitempty"`
-	CapsLock     *bool  `json:"caps_lock,omitempty"`
-	NumLock      *bool  `json:"num_lock,omitempty"`
-	ScrollLock   *bool  `json:"scroll_lock,omitempty"`
+	SessionID     string `json:"session_id"`
+	RelativeMouse bool   `json:"relative_mouse,omitempty"`
+	GameMode      bool   `json:"game_mode,omitempty"`
+	CapsLock      *bool  `json:"caps_lock,omitempty"`
+	NumLock       *bool  `json:"num_lock,omitempty"`
+	ScrollLock    *bool  `json:"scroll_lock,omitempty"`
 }
 
 type FileListPayload struct {
-	SessionID string         `json:"session_id"`
-	Path      string         `json:"path,omitempty"` // relative to xfer root
+	SessionID string          `json:"session_id"`
+	Path      string          `json:"path,omitempty"` // relative to xfer root
 	Entries   []FileListEntry `json:"entries,omitempty"`
-	Error     string         `json:"error,omitempty"`
+	Error     string          `json:"error,omitempty"`
 }
 
 type FileListEntry struct {
-	Name  string `json:"name"`
-	IsDir bool   `json:"is_dir"`
-	Size  int64  `json:"size,omitempty"`
-	ModUnix int64 `json:"mod_unix,omitempty"`
+	Name    string `json:"name"`
+	IsDir   bool   `json:"is_dir"`
+	Size    int64  `json:"size,omitempty"`
+	ModUnix int64  `json:"mod_unix,omitempty"`
 }
 
 type FileAckPayload struct {
-	SessionID string  `json:"session_id"`
-	FileID    string  `json:"file_id"`
-	Offset    int64   `json:"offset"`
-	OK        bool    `json:"ok"`
-	Error     string  `json:"error,omitempty"`
-	Progress  float64 `json:"progress,omitempty"` // 0..1
-	ResumeFrom int64  `json:"resume_from,omitempty"`
+	SessionID  string  `json:"session_id"`
+	FileID     string  `json:"file_id"`
+	Offset     int64   `json:"offset"`
+	OK         bool    `json:"ok"`
+	Error      string  `json:"error,omitempty"`
+	Progress   float64 `json:"progress,omitempty"` // 0..1
+	ResumeFrom int64   `json:"resume_from,omitempty"`
 }
 
 // FilePullPayload: client asks agent to push a file from the agent machine.
@@ -309,6 +336,32 @@ type CameraFramePayload struct {
 	Height    int    `json:"height,omitempty"`
 	DataB64   string `json:"data_b64"`
 	KeyFrame  bool   `json:"key_frame,omitempty"`
+	// Chunking: REUDP MaxPayload≈1200; MJPEG JSON must be split (same idea as video parts).
+	FrameID uint32 `json:"frame_id,omitempty"`
+	Part    uint16 `json:"part,omitempty"`
+	Parts   uint16 `json:"parts,omitempty"`
+}
+
+// PhoneCamOpenPayload: client asks agent to publish a virtual webcam fed by the phone.
+type PhoneCamOpenPayload struct {
+	SessionID string `json:"session_id"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	FPS       int    `json:"fps,omitempty"`
+	Codec     string `json:"codec,omitempty"`    // mjpeg|h264 (experiment; mjpeg fallback)
+	Position  string `json:"position,omitempty"` // front|back (hint only)
+}
+
+type PhoneCamClosePayload struct {
+	SessionID string `json:"session_id"`
+}
+
+// PhoneCamReadyPayload: agent acknowledges virtual webcam sink.
+type PhoneCamReadyPayload struct {
+	SessionID string `json:"session_id"`
+	OK        bool   `json:"ok"`
+	Error     string `json:"error,omitempty"`
+	Device    string `json:"device,omitempty"` // virtual device display name
 }
 
 type USBListPayload struct {
@@ -318,16 +371,16 @@ type USBListPayload struct {
 }
 
 type USBDevice struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	VendorID string `json:"vendor_id,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	VendorID  string `json:"vendor_id,omitempty"`
 	ProductID string `json:"product_id,omitempty"`
-	Bus      string `json:"bus,omitempty"`
+	Bus       string `json:"bus,omitempty"`
 }
 
 type USBAttachPayload struct {
-	SessionID string `json:"session_id"`
-	DeviceID  string `json:"device_id"`
+	SessionID  string `json:"session_id"`
+	DeviceID   string `json:"device_id"`
 	RemoteAddr string `json:"remote_addr,omitempty"` // usbip host:port when applicable
 }
 
@@ -343,8 +396,8 @@ type USBDataPayload struct {
 }
 
 type PrinterListPayload struct {
-	SessionID string          `json:"session_id,omitempty"`
-	Printers  []PrinterInfo   `json:"printers,omitempty"`
+	SessionID string        `json:"session_id,omitempty"`
+	Printers  []PrinterInfo `json:"printers,omitempty"`
 }
 
 type PrinterInfo struct {
@@ -367,6 +420,41 @@ type PrinterAckPayload struct {
 	JobID     string `json:"job_id"`
 	OK        bool   `json:"ok"`
 	Error     string `json:"error,omitempty"`
+}
+
+// AgentChatListPayload — data-only AI session inventory (no desktop / mouse / video).
+type AgentChatListPayload struct {
+	Action      string          `json:"action,omitempty"` // list (default)
+	ProjectPath string          `json:"project_path,omitempty"`
+	Kind        string          `json:"kind,omitempty"` // optional filter: cursor|claude|codex|gemini
+	Offset      int             `json:"offset,omitempty"`
+	NextOffset  int             `json:"next_offset,omitempty"`
+	HasMore     bool            `json:"has_more,omitempty"`
+	Sessions    []AgentChatInfo `json:"sessions,omitempty"`
+	Error       string          `json:"error,omitempty"`
+}
+
+type AgentChatInfo struct {
+	Kind        string `json:"kind"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Cwd         string `json:"cwd,omitempty"`
+	CreatedAtMs int64  `json:"created_at_ms,omitempty"`
+	UpdatedAtMs int64  `json:"updated_at_ms,omitempty"`
+	ScreenName  string `json:"screen_name,omitempty"`
+	ScreenAlive bool   `json:"screen_alive,omitempty"`
+	Source      string `json:"source,omitempty"`
+	Client      string `json:"client,omitempty"`
+}
+
+// AgentChatDetailPayload — reserved for session transcript/detail (stub).
+type AgentChatDetailPayload struct {
+	Action string `json:"action,omitempty"` // get
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	OK     bool   `json:"ok"`
+	Error  string `json:"error,omitempty"`
+	// Future: messages, summary, etc.
 }
 
 func MustJSON(v any) []byte {

@@ -22,7 +22,15 @@ type AudioCapture struct {
 }
 
 func StartAudioCapture(ctx context.Context, sampleRate int) (*AudioCapture, error) {
-	if os.Getenv("RE_AUDIO") == "0" {
+	// macOS: mic capture is opt-in. Opening avfoundation ":0" lights the Control
+	// Center orange mic pill and can crowd out the menu-bar tray icon (notch).
+	// Set RE_AUDIO=1 to enable. Elsewhere, RE_AUDIO=0 disables.
+	if runtime.GOOS == "darwin" {
+		v := strings.ToLower(strings.TrimSpace(os.Getenv("RE_AUDIO")))
+		if v != "1" && v != "true" && v != "yes" && v != "on" {
+			return nil, nil
+		}
+	} else if os.Getenv("RE_AUDIO") == "0" {
 		return nil, nil
 	}
 	if sampleRate <= 0 {

@@ -86,7 +86,8 @@ func (s *Store) RedeemPairing(deviceID, token string) (PairAck, RedeemPairingRes
 		delete(s.pairing, token)
 		return PairAck{}, RedeemExpired
 	}
-	delete(s.pairing, token)
+	// Keep the pairing entry until ExpiresAt so the same QR can be re-scanned /
+	// after a drop (each redeem still mints a unique session ticket).
 	sess, err := RandomToken(24)
 	if err != nil {
 		return PairAck{}, RedeemUnknown

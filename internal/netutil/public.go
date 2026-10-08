@@ -394,6 +394,48 @@ func RewriteLoopbackRelayHost(raw, publicHost string) string {
 	return u.String()
 }
 
+// RelayURLHostIsUnreliableOnWAN reports hosts a phone on cellular cannot reach
+// (loopback, .local, RFC1918). Public DNS names are treated as WAN-reachable.
+func RelayURLHostIsUnreliableOnWAN(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return true
+	}
+	host := strings.Trim(strings.ToLower(u.Hostname()), "[]")
+	if IsLoopbackHost(host) || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return IsPrivateOrLocalIP(ip)
+	}
+	return false
+}
+
+// PairingAdvertisedRelay picks the relay URL embedded in QR / deep links.
+// Agent connect may stay on LAN loopback; clients on 5G need a WAN-facing relay.
+func PairingAdvertisedRelay(publicRelay, agentRelay string) string {
+	pub := strings.TrimSpace(publicRelay)
+	agent := strings.TrimSpace(agentRelay)
+	if pub != "" && !RelayURLHostIsUnreliableOnWAN(pub) {
+		return pub
+	}
+	if agent != "" && !RelayURLHostIsUnreliableOnWAN(agent) {
+		return agent
+	}
+	resolved := ResolveClientRelay(pub, agent)
+	if resolved != "" && !RelayURLHostIsUnreliableOnWAN(resolved) {
+		return resolved
+	}
+	if pub != "" {
+		return pub
+	}
+	return agent
+}
+
 // ResolveClientRelay returns the relay URL to embed in QR / deep link.
 // Agent connect URL (relay_url) is left alone; only the advertised URL is rewritten.
 // Rewrites loopback → DirectPublicIP only when not behind NAT.

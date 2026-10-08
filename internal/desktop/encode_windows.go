@@ -13,6 +13,12 @@ func NewEncoder(width, height, fps int) (Encoder, error) {
 
 // NewEncoderBitrate creates an encoder with an explicit target bitrate (kbps).
 func NewEncoderBitrate(width, height, fps, bitrateK int) (Encoder, error) {
+	return NewEncoderBitrateCodec(width, height, fps, bitrateK, false)
+}
+
+// NewEncoderBitrateCodec: Windows ignores hevc for now (H.264 path).
+func NewEncoderBitrateCodec(width, height, fps, bitrateK int, hevc bool) (Encoder, error) {
+	_ = hevc
 	if fps <= 0 {
 		fps = 15
 	}

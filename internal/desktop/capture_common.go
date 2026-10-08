@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -85,6 +87,37 @@ func toRGBA(img image.Image) *image.RGBA {
 	return out
 }
 
+// subsampleHalfRGBA drops to 1/2 linear resolution with a tight pixel copy (no
+// per-pixel Set). Used before scaleRGBA so 5K→1440p does not crawl at ~1fps.
+func subsampleHalfRGBA(src *image.RGBA) *image.RGBA {
+	if src == nil {
+		return src
+	}
+	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
+	dw, dh := sw/2, sh/2
+	if dw < 1 {
+		dw = 1
+	}
+	if dh < 1 {
+		dh = 1
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
+	for y := 0; y < dh; y++ {
+		sy := y * 2
+		srcOff := sy * src.Stride
+		dstOff := y * dst.Stride
+		for x := 0; x < dw; x++ {
+			si := srcOff + x*2*4
+			di := dstOff + x*4
+			dst.Pix[di] = src.Pix[si]
+			dst.Pix[di+1] = src.Pix[si+1]
+			dst.Pix[di+2] = src.Pix[si+2]
+			dst.Pix[di+3] = src.Pix[si+3]
+		}
+	}
+	return dst
+}
+
 func scaleRGBA(src *image.RGBA, maxW, maxH int) *image.RGBA {
 	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
 	if sw <= maxW && sh <= maxH {
@@ -130,9 +163,15 @@ func ScaleExact(src *image.RGBA, dw, dh int) *image.RGBA {
 }
 
 func lookPath(bin string) (string, error) {
-	p, err := exec.LookPath(bin)
-	if err != nil {
-		return "", fmt.Errorf("%s not found: %w", bin, err)
+	if p, err := exec.LookPath(bin); err == nil {
+		return p, nil
 	}
-	return p, nil
+	// GUI tray PATH is often /usr/bin:/bin — still find Homebrew ffmpeg for 16K libx265.
+	for _, dir := range []string{"/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"} {
+		cand := filepath.Join(dir, bin)
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return cand, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found", bin)
 }

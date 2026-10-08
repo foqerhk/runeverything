@@ -49,6 +49,26 @@ func TestAdvertiseRelayURL(t *testing.T) {
 	}
 }
 
+func TestRelayURLHostIsUnreliableOnWAN(t *testing.T) {
+	if !RelayURLHostIsUnreliableOnWAN("ws://192.168.1.115:8787/re2") {
+		t.Fatal("LAN IP should be unreliable on WAN")
+	}
+	if RelayURLHostIsUnreliableOnWAN("wss://8e2cee2dd1.intentcomputing.cn/re2") {
+		t.Fatal("public DNS relay should be WAN-reachable")
+	}
+}
+
+func TestPairingAdvertisedRelay_prefersPublicRelay(t *testing.T) {
+	lan := "ws://192.168.1.115:8787/re2"
+	pub := "wss://relay.example.com/re2"
+	if got := PairingAdvertisedRelay(pub, lan); got != pub {
+		t.Fatalf("got %q want %q", got, pub)
+	}
+	if got := PairingAdvertisedRelay("", lan); got != lan {
+		t.Fatalf("fallback when only LAN configured: got %q", got)
+	}
+}
+
 func TestDirectPublicIP_NATEgressRejected(t *testing.T) {
 	// Home NAT: only private NICs, egress is shared public IP.
 	lookup := func(context.Context) (string, error) { return "203.0.113.50", nil }

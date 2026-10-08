@@ -59,7 +59,7 @@
 |------|------|
 | CURSOR 0x32 | 光标位置 |
 | DISPLAYS 0x33 | 列表/选屏 |
-| STATS 0x34 | RTT/丢包 → ABR |
+| STATS 0x34 | RTT/丢包/jitter/decode_delay/stall/recv_kbps → ABR |
 | KEYFRAME_REQ 0x35 | 要关键帧 |
 | FILE_* 0x40–42 | 文件上传 |
 | FILE_PULL 0x43 | 客户端拉取 Agent 文件 |
@@ -67,7 +67,9 @@
 | INPUT_MODE 0x45 | 相对鼠标/锁定键 |
 | HOLE_PUNCH 0x50 | P2P |
 | WOL 0x60 | 网络唤醒 |
-| CAMERA_* 0x70–73 | 摄像头通道 |
+| CAMERA_* 0x70–73 | 远程桌面摄像头（Agent 主机摄像头 → 手机预览） |
+| PHONECAM_* 0x74–77 | 用手机当摄像头（手机 → Agent 虚拟摄像头 KoKo Phone Camera） |
+| AGENT_CHAT_* 0xA0–A1 | AI 会话列表/详情口子（Cursor/Claude/Codex/Gemini；纯数据，不走路控画面） |
 | USB_* 0x80–83 | USB 转发 |
 | PRINTER_* 0x90–92 | 远程打印 |
 | CLIPBOARD 0x31 | 剪贴板 |

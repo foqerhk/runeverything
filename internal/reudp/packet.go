@@ -38,6 +38,7 @@ var (
 	ErrBadVersion = errors.New("reudp: bad version")
 	ErrTooLarge   = errors.New("reudp: payload too large")
 	ErrShort      = errors.New("reudp: packet too short")
+	ErrCongested  = errors.New("reudp: send window full")
 )
 
 // Packet is one UDP datagram.

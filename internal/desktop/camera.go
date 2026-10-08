@@ -37,7 +37,11 @@ func ListCameras() ([]CameraDev, error) {
 }
 
 func listCamerasAVFoundation() ([]CameraDev, error) {
-	cmd := exec.Command("ffmpeg", "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", "")
+	bin, err := lookPath("ffmpeg")
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(bin, "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", "")
 	out, _ := cmd.CombinedOutput()
 	var devs []CameraDev
 	inVideo := false
@@ -61,6 +65,14 @@ func listCamerasAVFoundation() ([]CameraDev, error) {
 			}
 			id := rest[:end]
 			name := strings.TrimSpace(rest[end+1:])
+			// Skip screen-capture / our own virtual webcam — not a host sensor.
+			low := strings.ToLower(name)
+			if strings.Contains(low, "capture screen") ||
+				(strings.Contains(low, "screen") && strings.Contains(low, "capture")) ||
+				strings.Contains(low, "koko phone camera") ||
+				strings.Contains(low, "akvirtualcamera") {
+				continue
+			}
 			devs = append(devs, CameraDev{ID: id, Name: name})
 		}
 	}
@@ -112,17 +124,18 @@ type CameraCapture struct {
 }
 
 func StartCamera(ctx context.Context, deviceID string, width, height, fps int, codec string) (*CameraCapture, error) {
-	if _, err := lookPath("ffmpeg"); err != nil {
+	bin, err := lookPath("ffmpeg")
+	if err != nil {
 		return nil, err
 	}
 	if width <= 0 {
-		width = 1280
+		width = 640
 	}
 	if height <= 0 {
-		height = 720
+		height = 360
 	}
 	if fps <= 0 {
-		fps = 15
+		fps = 10
 	}
 	if codec == "" {
 		codec = "mjpeg"
@@ -133,6 +146,9 @@ func StartCamera(ctx context.Context, deviceID string, width, height, fps int, c
 			deviceID = devs[0].ID
 		}
 	}
+	if deviceID == "" {
+		return nil, fmt.Errorf("camera: no device")
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	inArgs := cameraInputArgs(deviceID)
 	var outArgs []string
@@ -142,12 +158,19 @@ func StartCamera(ctx context.Context, deviceID string, width, height, fps int, c
 			"-f", "h264", "pipe:1"}
 	default:
 		codec = "mjpeg"
-		outArgs = []string{"-an", "-c:v", "mjpeg", "-q:v", "5", "-f", "mjpeg", "pipe:1"}
+		// Aggressive JPEG: preview PiP is tiny; oversized frames used to split into
+		// 100+ reliable REUDP parts and never painted ("session not ready" flood).
+		outArgs = []string{"-an", "-c:v", "mjpeg", "-q:v", "14", "-f", "mjpeg", "pipe:1"}
 	}
 	args := append([]string{"-loglevel", "error"}, inArgs...)
-	args = append(args, "-s", fmt.Sprintf("%dx%d", width, height), "-r", itoa(fps))
+	// Keep sensor aspect — forced -s WxH stretches Continuity / FaceTime frames.
+	// Also hard-cap pixel count so Continuity Camera can't emit multi-MB JPEGs.
+	args = append(args,
+		"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2", width, height),
+		"-r", itoa(fps),
+	)
 	args = append(args, outArgs...)
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()

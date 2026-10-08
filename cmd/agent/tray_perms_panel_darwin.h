@@ -8,11 +8,12 @@ extern "C" {
 /* Show (or raise) the native permissions window. Strings are copied. */
 void re_perms_panel_show(const char *title, const char *subtitle,
                          const char *btn_settings, const char *btn_done,
-                         const char *hint);
+                         const char *btn_done_restart, const char *hint);
 
 /* Implemented in Go (//export). Caller must free the returned C string. */
 char *rePermsStatusJSON(void);
 void rePermsOpenID(char *id);
+void rePermsRelaunch(void);
 
 #ifdef __cplusplus
 }

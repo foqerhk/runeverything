@@ -15,11 +15,22 @@ typedef struct {
 	unsigned char *data;
 	size_t len;
 	int keyframe;
+	int hevc; // set by owner before encode; callback reads it
 	pthread_mutex_t mu;
 	pthread_cond_t cv;
 	int ready;
 	int closed;
 } re_vt_out;
+
+static void re_vt_append_startcode(unsigned char *buf, size_t *off, const uint8_t *nal, size_t nalLen) {
+	if (!nal || nalLen == 0) return;
+	buf[(*off)++] = 0;
+	buf[(*off)++] = 0;
+	buf[(*off)++] = 0;
+	buf[(*off)++] = 1;
+	memcpy(buf + *off, nal, nalLen);
+	*off += nalLen;
+}
 
 static void re_vt_callback(void *outputCallbackRefCon, void *sourceFrameRefCon,
 	OSStatus status, VTEncodeInfoFlags infoFlags, CMSampleBufferRef sampleBuffer) {
@@ -42,23 +53,32 @@ static void re_vt_callback(void *outputCallbackRefCon, void *sourceFrameRefCon,
 		if (!notSync || !CFBooleanGetValue(notSync)) isKey = 1;
 	}
 
-	// Build Annex-B: parameter sets on keyframes + length-prefixed NALs -> start codes
-	size_t total = 0;
+	size_t total = 64;
+	CMFormatDescriptionRef fmt = NULL;
+	size_t psCount = 0;
 	if (isKey) {
-		CMFormatDescriptionRef fmt = CMSampleBufferGetFormatDescription(sampleBuffer);
-		size_t spsCount = 0;
-		const uint8_t *sps = NULL;
-		size_t spsLen = 0;
-		size_t ppsCount = 0;
-		const uint8_t *pps = NULL;
-		size_t ppsLen = 0;
+		fmt = CMSampleBufferGetFormatDescription(sampleBuffer);
 		if (fmt) {
-			CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 0, &sps, &spsLen, &spsCount, NULL);
-			CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 1, &pps, &ppsLen, &ppsCount, NULL);
-			if (sps && spsLen) total += 4 + spsLen;
-			if (pps && ppsLen) total += 4 + ppsLen;
+			if (o->hevc) {
+				const uint8_t *ps = NULL; size_t psLen = 0; int nh = 0;
+				if (CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(fmt, 0, &ps, &psLen, &psCount, &nh) == noErr) {
+					for (size_t i = 0; i < psCount; i++) {
+						ps = NULL; psLen = 0;
+						if (CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(fmt, i, &ps, &psLen, NULL, NULL) == noErr && ps && psLen)
+							total += 4 + psLen;
+					}
+				}
+			} else {
+				const uint8_t *sps = NULL; size_t spsLen = 0;
+				const uint8_t *pps = NULL; size_t ppsLen = 0;
+				size_t nps = 0; int nh = 0;
+				CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 0, &sps, &spsLen, &nps, &nh);
+				CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 1, &pps, &ppsLen, &nps, &nh);
+				if (sps && spsLen) total += 4 + spsLen;
+				if (pps && ppsLen) total += 4 + ppsLen;
+				psCount = nps;
+			}
 		}
-		(void)spsCount; (void)ppsCount;
 	}
 
 	CMBlockBufferRef block = CMSampleBufferGetDataBuffer(sampleBuffer);
@@ -66,29 +86,27 @@ static void re_vt_callback(void *outputCallbackRefCon, void *sourceFrameRefCon,
 	char *blockData = NULL;
 	if (block) {
 		CMBlockBufferGetDataPointer(block, 0, NULL, &blockLen, &blockData);
-		total += blockLen + 32; // room for start-code conversion overhead
+		total += blockLen + 32;
 	}
 
 	unsigned char *buf = (unsigned char *)malloc(total + 64);
 	size_t off = 0;
-	if (isKey) {
-		CMFormatDescriptionRef fmt = CMSampleBufferGetFormatDescription(sampleBuffer);
-		const uint8_t *sps = NULL; size_t spsLen = 0;
-		const uint8_t *pps = NULL; size_t ppsLen = 0;
-		size_t nps = 0; int nalHeaderLen = 0;
-		if (fmt) {
-			CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 0, &sps, &spsLen, &nps, &nalHeaderLen);
-			CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 1, &pps, &ppsLen, &nps, &nalHeaderLen);
+	if (isKey && fmt) {
+		if (o->hevc) {
+			for (size_t i = 0; i < psCount; i++) {
+				const uint8_t *ps = NULL; size_t psLen = 0;
+				if (CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(fmt, i, &ps, &psLen, NULL, NULL) == noErr)
+					re_vt_append_startcode(buf, &off, ps, psLen);
+			}
+		} else {
+			const uint8_t *sps = NULL; size_t spsLen = 0;
+			const uint8_t *pps = NULL; size_t ppsLen = 0;
+			size_t nps = 0; int nh = 0;
+			CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 0, &sps, &spsLen, &nps, &nh);
+			CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 1, &pps, &ppsLen, &nps, &nh);
+			re_vt_append_startcode(buf, &off, sps, spsLen);
+			re_vt_append_startcode(buf, &off, pps, ppsLen);
 		}
-		if (sps && spsLen) {
-			buf[off++]=0; buf[off++]=0; buf[off++]=0; buf[off++]=1;
-			memcpy(buf+off, sps, spsLen); off += spsLen;
-		}
-		if (pps && ppsLen) {
-			buf[off++]=0; buf[off++]=0; buf[off++]=0; buf[off++]=1;
-			memcpy(buf+off, pps, ppsLen); off += ppsLen;
-		}
-		(void)nalHeaderLen;
 	}
 
 	if (blockData && blockLen > 4) {
@@ -101,9 +119,7 @@ static void re_vt_callback(void *outputCallbackRefCon, void *sourceFrameRefCon,
 			i += 4;
 			if (i + naluLen > blockLen) break;
 			if (off + 4 + naluLen > total + 64) break;
-			buf[off++]=0; buf[off++]=0; buf[off++]=0; buf[off++]=1;
-			memcpy(buf+off, blockData+i, naluLen);
-			off += naluLen;
+			re_vt_append_startcode(buf, &off, (const uint8_t *)(blockData + i), naluLen);
 			i += naluLen;
 		}
 	}
@@ -123,14 +139,49 @@ typedef struct {
 	int width;
 	int height;
 	int fps;
+	int hevc;
 	int64_t frameIndex;
 } re_vt_enc;
 
-static OSStatus re_vt_create(re_vt_enc *e, int width, int height, int fps) {
+static void re_vt_apply_bitrate(VTCompressionSessionRef session, int bitrateK) {
+	if (!session || bitrateK <= 0) return;
+	int64_t bps = (int64_t)bitrateK * 1000;
+	CFNumberRef br = CFNumberCreate(NULL, kCFNumberSInt64Type, &bps);
+	if (br) {
+		VTSessionSetProperty(session, kVTCompressionPropertyKey_AverageBitRate, br);
+		CFRelease(br);
+	}
+	// Soften fat IDRs: ~bitrate over 1s window (bytes, seconds).
+	int64_t limits[2] = { bps / 8, 1 };
+	CFNumberRef b0 = CFNumberCreate(NULL, kCFNumberSInt64Type, &limits[0]);
+	CFNumberRef b1 = CFNumberCreate(NULL, kCFNumberSInt64Type, &limits[1]);
+	if (b0 && b1) {
+		const void *vals[2] = { b0, b1 };
+		CFArrayRef arr = CFArrayCreate(NULL, vals, 2, &kCFTypeArrayCallBacks);
+		if (arr) {
+			VTSessionSetProperty(session, kVTCompressionPropertyKey_DataRateLimits, arr);
+			CFRelease(arr);
+		}
+	}
+	if (b0) CFRelease(b0);
+	if (b1) CFRelease(b1);
+	float q = 0.45f;
+	if (bitrateK >= 12000) q = 0.55f;
+	else if (bitrateK <= 6000) q = 0.35f;
+	CFNumberRef qref = CFNumberCreate(NULL, kCFNumberFloatType, &q);
+	if (qref) {
+		VTSessionSetProperty(session, kVTCompressionPropertyKey_Quality, qref);
+		CFRelease(qref);
+	}
+}
+
+static OSStatus re_vt_create(re_vt_enc *e, int width, int height, int fps, int bitrateK, int hevc) {
 	memset(e, 0, sizeof(*e));
 	e->width = width;
 	e->height = height;
 	e->fps = fps > 0 ? fps : 15;
+	e->hevc = hevc ? 1 : 0;
+	e->out.hevc = e->hevc;
 	pthread_mutex_init(&e->out.mu, NULL);
 	pthread_cond_init(&e->out.cv, NULL);
 
@@ -141,23 +192,36 @@ static OSStatus re_vt_create(re_vt_enc *e, int width, int height, int fps) {
 	CFDictionarySetValue(srcAttrs, kCVPixelBufferPixelFormatTypeKey, pixFmt);
 	CFRelease(pixFmt);
 
-	OSStatus st = VTCompressionSessionCreate(NULL, width, height, kCMVideoCodecType_H264,
+	CMVideoCodecType codecType = e->hevc ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
+	OSStatus st = VTCompressionSessionCreate(NULL, width, height, codecType,
 		NULL, srcAttrs, NULL, re_vt_callback, &e->out, &e->session);
 	CFRelease(srcAttrs);
 	if (st != noErr) return st;
 
 	VTSessionSetProperty(e->session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
-	VTSessionSetProperty(e->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Baseline_AutoLevel);
 	VTSessionSetProperty(e->session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse);
+	if (e->hevc) {
+		VTSessionSetProperty(e->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel);
+	} else {
+		VTSessionSetProperty(e->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Baseline_AutoLevel);
+	}
 	int32_t fpsNum = e->fps;
 	CFNumberRef fpsRef = CFNumberCreate(NULL, kCFNumberSInt32Type, &fpsNum);
 	VTSessionSetProperty(e->session, kVTCompressionPropertyKey_ExpectedFrameRate, fpsRef);
 	CFRelease(fpsRef);
-	int32_t gop = e->fps * 2;
+	int32_t gop = e->fps * 5;
+	if (gop < 30) gop = 30;
 	CFNumberRef gopRef = CFNumberCreate(NULL, kCFNumberSInt32Type, &gop);
 	VTSessionSetProperty(e->session, kVTCompressionPropertyKey_MaxKeyFrameInterval, gopRef);
 	CFRelease(gopRef);
+	re_vt_apply_bitrate(e->session, bitrateK > 0 ? bitrateK : 2500);
 	VTCompressionSessionPrepareToEncodeFrames(e->session);
+	return noErr;
+}
+
+static OSStatus re_vt_set_bitrate(re_vt_enc *e, int bitrateK) {
+	if (!e || !e->session || bitrateK <= 0) return -1;
+	re_vt_apply_bitrate(e->session, bitrateK);
 	return noErr;
 }
 
@@ -181,28 +245,15 @@ static void re_vt_destroy(re_vt_enc *e) {
 static OSStatus re_vt_encode_rgba(re_vt_enc *e, const unsigned char *rgba, int stride,
 	int forceKey, unsigned char **outAnnexB, size_t *outLen, int *outKey) {
 	if (!e || !e->session || !rgba) return -1;
+	// Zero-copy wrap of the Go BGRA buffer (SCK keeps BGRA). Avoids a 56MB memcpy at 5K.
 	CVPixelBufferRef pb = NULL;
-	OSStatus st = CVPixelBufferCreate(NULL, e->width, e->height, kCVPixelFormatType_32BGRA,
-		NULL, &pb);
+	OSStatus st = CVPixelBufferCreateWithBytes(NULL, e->width, e->height, kCVPixelFormatType_32BGRA,
+		(void *)rgba, (size_t)stride, NULL, NULL, NULL, &pb);
 	if (st != noErr) return st;
-	CVPixelBufferLockBaseAddress(pb, 0);
-	unsigned char *dst = (unsigned char *)CVPixelBufferGetBaseAddress(pb);
-	size_t dstStride = CVPixelBufferGetBytesPerRow(pb);
-	for (int y = 0; y < e->height; y++) {
-		const unsigned char *srcRow = rgba + y * stride;
-		unsigned char *dstRow = dst + y * dstStride;
-		for (int x = 0; x < e->width; x++) {
-			// RGBA -> BGRA
-			dstRow[x*4+0] = srcRow[x*4+2];
-			dstRow[x*4+1] = srcRow[x*4+1];
-			dstRow[x*4+2] = srcRow[x*4+0];
-			dstRow[x*4+3] = srcRow[x*4+3];
-		}
-	}
-	CVPixelBufferUnlockBaseAddress(pb, 0);
 
 	pthread_mutex_lock(&e->out.mu);
 	e->out.ready = 0;
+	e->out.hevc = e->hevc;
 	if (e->out.data) { free(e->out.data); e->out.data = NULL; e->out.len = 0; }
 	pthread_mutex_unlock(&e->out.mu);
 
@@ -238,39 +289,62 @@ import "C"
 
 import (
 	"fmt"
+	"log"
 	"unsafe"
 )
 
 type vtEncoder struct {
-	enc *C.re_vt_enc
-	w   int
-	h   int
+	enc      *C.re_vt_enc
+	w        int
+	h        int
+	fps      int
+	bitrateK int
+	hevc     bool
 }
 
-func newVideoToolboxEncoder(width, height, fps int) (Encoder, error) {
+func newVideoToolboxEncoder(width, height, fps, bitrateK int, hevc bool) (Encoder, error) {
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("desktop: invalid encode size")
 	}
 	width &^= 1
 	height &^= 1
+	if bitrateK <= 0 {
+		bitrateK = 2500
+	}
 	e := (*C.re_vt_enc)(C.malloc(C.size_t(unsafe.Sizeof(C.re_vt_enc{}))))
 	if e == nil {
 		return nil, fmt.Errorf("desktop: alloc vt encoder")
 	}
-	if st := C.re_vt_create(e, C.int(width), C.int(height), C.int(fps)); st != 0 {
-		C.free(unsafe.Pointer(e))
-		return nil, fmt.Errorf("desktop: VideoToolbox create failed: %d", int(st))
+	hevcFlag := 0
+	if hevc {
+		hevcFlag = 1
 	}
-	return &vtEncoder{enc: e, w: width, h: height}, nil
+	if st := C.re_vt_create(e, C.int(width), C.int(height), C.int(fps), C.int(bitrateK), C.int(hevcFlag)); st != 0 {
+		C.free(unsafe.Pointer(e))
+		return nil, fmt.Errorf("desktop: VideoToolbox create failed: %d hevc=%v", int(st), hevc)
+	}
+	return &vtEncoder{enc: e, w: width, h: height, fps: fps, bitrateK: bitrateK, hevc: hevc}, nil
 }
 
-// NewEncoder prefers native VideoToolbox hard encode, then ffmpeg h264_videotoolbox, then libx264.
+// NewEncoder prefers native VideoToolbox hard encode, then ffmpeg, then synthetic.
 func NewEncoder(width, height, fps int) (Encoder, error) {
 	return NewEncoderBitrate(width, height, fps, 2500)
 }
 
-// NewEncoderBitrate creates an encoder with an explicit target bitrate (kbps).
+// NewEncoderBitrate creates an H.264 encoder with an explicit target bitrate (kbps).
 func NewEncoderBitrate(width, height, fps, bitrateK int) (Encoder, error) {
+	return NewEncoderBitrateCodec(width, height, fps, bitrateK, false)
+}
+
+// vtHardMax is the largest dimension Apple Silicon VideoToolbox HEVC will
+// actually encode. Above this, VTCompressionSessionCreate may succeed without
+// RequireHardware but EncodeFrame returns empty (−2) — see 16K probe on M5.
+const vtHardMaxDim = 8192
+
+// NewEncoderBitrateCodec creates H.264 or HEVC (hevc=true) VideoToolbox encoder.
+// HEVC create failure falls back to H.264 so OPEN never hard-fails on older hosts.
+// Dimensions above vtHardMaxDim skip VT and use ffmpeg libx265 for full-blood 16K.
+func NewEncoderBitrateCodec(width, height, fps, bitrateK int, hevc bool) (Encoder, error) {
 	if fps <= 0 {
 		fps = 15
 	}
@@ -279,16 +353,79 @@ func NewEncoderBitrate(width, height, fps, bitrateK int) (Encoder, error) {
 	}
 	width &^= 1
 	height &^= 1
-	if enc, err := newVideoToolboxEncoder(width, height, fps); err == nil {
-		return enc, nil
+	overVT := width > vtHardMaxDim || height > vtHardMaxDim
+	if !overVT {
+		if enc, err := newVideoToolboxEncoder(width, height, fps, bitrateK, hevc); err == nil {
+			return enc, nil
+		} else if hevc {
+			// Fall back so 5K hosts without HEVC encode still stream.
+			return NewEncoderBitrateCodec(width, height, fps, bitrateK, false)
+		}
+	} else {
+		log.Printf("desktop: %dx%d exceeds VT max %d — using ffmpeg/libx265 for full-blood encode", width, height, vtHardMaxDim)
 	}
 	if _, err := lookPath("ffmpeg"); err == nil {
-		if enc, err := newFFmpegEncoder(width, height, fps, bitrateK, "h264_videotoolbox"); err == nil {
+		if hevc || overVT {
+			// 16K full-blood: VT cannot emit frames; libx265 is required.
+			if enc, err := newFFmpegEncoder(width, height, fps, bitrateK, "libx265"); err == nil {
+				return enc, nil
+			}
+			if !overVT {
+				if enc, err := newFFmpegEncoder(width, height, fps, bitrateK, "hevc_videotoolbox"); err == nil {
+					return enc, nil
+				}
+			}
+		}
+		codec := "h264_videotoolbox"
+		if enc, err := newFFmpegEncoder(width, height, fps, bitrateK, codec); err == nil {
 			return enc, nil
 		}
 		return newFFmpegEncoder(width, height, fps, bitrateK, "libx264")
 	}
+	if overVT {
+		return nil, fmt.Errorf("desktop: %dx%d needs ffmpeg/libx265 (VideoToolbox max %d)", width, height, vtHardMaxDim)
+	}
 	return &syntheticEncoder{w: width, h: height}, nil
+}
+
+func (e *vtEncoder) CodecName() string {
+	if e != nil && e.hevc {
+		return CodecH265
+	}
+	return CodecH264
+}
+
+// Reconfigure hot-updates VT bitrate; size changes recreate the session.
+func (e *vtEncoder) Reconfigure(width, height, fps, bitrateK int) error {
+	if e == nil || e.enc == nil {
+		return fmt.Errorf("desktop: vt encoder not ready")
+	}
+	width &^= 1
+	height &^= 1
+	if fps <= 0 {
+		fps = e.fps
+	}
+	if bitrateK <= 0 {
+		bitrateK = e.bitrateK
+	}
+	if width == e.w && height == e.h {
+		if bitrateK != e.bitrateK {
+			_ = C.re_vt_set_bitrate(e.enc, C.int(bitrateK))
+			e.bitrateK = bitrateK
+		}
+		e.fps = fps
+		return nil
+	}
+	hevcFlag := 0
+	if e.hevc {
+		hevcFlag = 1
+	}
+	C.re_vt_destroy(e.enc)
+	if st := C.re_vt_create(e.enc, C.int(width), C.int(height), C.int(fps), C.int(bitrateK), C.int(hevcFlag)); st != 0 {
+		return fmt.Errorf("desktop: VT reconfigure create: %d", int(st))
+	}
+	e.w, e.h, e.fps, e.bitrateK = width, height, fps, bitrateK
+	return nil
 }
 
 func (e *vtEncoder) Encode(f Frame, keyframe bool) ([]byte, error) {

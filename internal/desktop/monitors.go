@@ -6,6 +6,7 @@ import (
 )
 
 // Monitor describes one display.
+// On Darwin, ID is CGDirectDisplayID (not a list index).
 type Monitor struct {
 	ID      int
 	Name    string

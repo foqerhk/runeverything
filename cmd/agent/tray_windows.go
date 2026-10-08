@@ -33,6 +33,12 @@ func onTrayReady() {
 	mCopy := systray.AddMenuItem(i18n.T("tray.copy_link"), i18n.T("tray.copy_link_tip"))
 	mFolder := systray.AddMenuItem(i18n.T("tray.open_folder"), i18n.T("tray.open_folder_tip"))
 	systray.AddSeparator()
+	mStatus := systray.AddMenuItem(i18n.T("tray.status"), i18n.T("tray.status_tip"))
+	mConfig := systray.AddMenuItem(i18n.T("tray.config"), i18n.T("tray.config_tip"))
+	mPerm := systray.AddMenuItem(i18n.T("tray.check_perms"), i18n.T("tray.check_perms_tip"))
+	mHelp := systray.AddMenuItem(i18n.T("tray.help"), i18n.T("tray.help_tip"))
+	mAbout := systray.AddMenuItem(i18n.T("tray.about"), i18n.T("tray.about_tip"))
+	systray.AddSeparator()
 	mAuto := systray.AddMenuItemCheckbox(i18n.T("tray.start_windows"), i18n.T("tray.start_windows_tip"), winutil.LogonTaskExists())
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem(i18n.T("tray.quit"), i18n.T("tray.quit_tip"))
@@ -78,6 +84,16 @@ func onTrayReady() {
 			case <-mFolder.ClickedCh:
 				home, _ := identity.HomeDir()
 				_ = winutil.OpenFolder(home)
+			case <-mStatus.ClickedCh:
+				trayShowStatusWindow()
+			case <-mConfig.ClickedCh:
+				trayShowConfigWindow()
+			case <-mPerm.ClickedCh:
+				go trayShowPermissionsPanel()
+			case <-mHelp.ClickedCh:
+				trayShowHelpWindow()
+			case <-mAbout.ClickedCh:
+				trayShowAboutWindow()
 			case <-mAuto.ClickedCh:
 				exe, _ := os.Executable()
 				if winutil.LogonTaskExists() {

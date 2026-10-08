@@ -49,7 +49,7 @@ payload
 | ACK | 可靠通道确认 |
 | PING/PONG | 保活 |
 
-可靠性：控制/键鼠按钮/Noise = 可靠；鼠标移动 = Latest；视频分片 = 不可靠。拥塞：AIMD + pacing（`internal/reudp`）。
+可靠性：控制/键鼠按钮/Noise = 可靠；鼠标移动 = Latest；视频分片 = 不可靠（`video_plane=v1`：REUDP DATA 前缀 `V1` + 显式 nonce ChaCha20-Poly1305，与有序 Noise 隧道分离）。旧客户端不带 `video_plane` 时 Agent 回退到 Noise 可靠视频。拥塞：AIMD + pacing（`internal/reudp`）。
 
 ## 隧道内消息（加密后）
 
@@ -57,8 +57,9 @@ payload
 
 | msg | 含义 |
 |-----|------|
-| `0x20` OPEN_DESKTOP | max_width/height, fps, codec=h264 |
-| `0x21` DESKTOP_READY | width/height/codec |
+| `0x20` OPEN_DESKTOP | max_width/height, fps, codec=h264；`display_id` 在 Darwin 为 CGDirectDisplayID |
+| `0x21` DESKTOP_READY | width/height/codec；`displays[]` 可含 `virtual` / `fb_width` / `fb_height`（可忽略） |
+| `0x33` DISPLAYS | list/select；`id` 语义同上 |
 | `0x22` DESKTOP_CLOSE | |
 | `0x23` VIDEO | session + frame_id + flags + part/parts + Annex-B |
 | `0x24` INPUT_MOUSE | 归一化 x,y + buttons |

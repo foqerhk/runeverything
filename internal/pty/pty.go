@@ -105,6 +105,9 @@ func Start(id string, cwd string, cmdArgs []string, cols, rows int, useTmux bool
 	}
 	env := os.Environ()
 	env = append(env, "PATH="+os.Getenv("HOME")+"/.local/bin:"+os.Getenv("PATH"))
+	if exe, err := os.Executable(); err == nil {
+		env = append(env, "RE_AGENT_BIN="+exe)
+	}
 	cmd.Env = env
 
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})

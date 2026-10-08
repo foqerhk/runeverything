@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -37,9 +39,27 @@ func main() {
 	i18n.Init()
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix(i18n.T("log.prefix"))
+	if path := strings.TrimSpace(os.Getenv("RE_LOG_FILE")); path != "" {
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+			defer f.Close()
+			log.SetOutput(io.MultiWriter(os.Stderr, f))
+		}
+	}
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "__re_perm_check":
+			// Tiny TCC probe for a fresh process (used by the permissions panel).
+			p := desktop.CheckHostPermissions()
+			s, a := byte('0'), byte('0')
+			if p.ScreenRecording {
+				s = '1'
+			}
+			if p.Accessibility {
+				a = '1'
+			}
+			fmt.Printf("%c%c", s, a)
+			return
 		case "pair":
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 			cmdPair()
@@ -64,6 +84,8 @@ func main() {
 			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 			cmdTray()
 			return
+		case "ide-mirror":
+			os.Exit(cmdIDEMirror(os.Args[2:]))
 		case "version", "-v", "--version":
 			fmt.Println(version)
 			return
@@ -72,16 +94,21 @@ func main() {
 			return
 		}
 	}
-	cmdRun()
+	// Default (Finder / open -a / LaunchAgents without args): menu-bar Agent.
+	// Headless CLI still uses explicit `run`. `tray` remains as an alias.
+	cmdTray()
 }
 
 func printUsage() {
 	fmt.Fprint(os.Stderr, i18n.T("usage"))
 }
 
-func applyRelayDiscovery(cfg *identity.Config, relayFlag string) (discovered bool) {
+func applyRelayDiscovery(cfg *identity.Config, relayFlag string) (discovered bool, alts []string) {
 	if !identity.ShouldAutoDiscover(cfg, relayFlag) {
-		return false
+		if s := strings.TrimSpace(os.Getenv("RE_RELAY_SECONDARY")); s != "" {
+			alts = []string{s}
+		}
+		return false, alts
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
@@ -96,18 +123,17 @@ func applyRelayDiscovery(cfg *identity.Config, relayFlag string) (discovered boo
 			cfg.PublicRelay = netutil.AdvertiseRelayURL(cfg.RelayURL, ip)
 			i18n.Log("log.direct_public", ip)
 		}
-		return false
+		return false, nil
 	}
 
 	i18n.Log("log.behind_nat")
-	relay, pub, ok := p2p.ResolveForAgent(ctx, cfg.RelayURL, cfg.PublicRelay, true)
+	relay, pub, alts, ok := p2p.ResolveForAgentMulti(ctx, cfg.RelayURL, cfg.PublicRelay, true, 2)
 	cfg.RelayURL = relay
 	cfg.PublicRelay = pub
 	if ok {
 		i18n.Log("log.selected_relay", relay)
-		return true
 	}
-	return false
+	return ok, alts
 }
 
 func finalizePublicRelay(cfg *identity.Config, discovered bool) {
@@ -115,12 +141,10 @@ func finalizePublicRelay(cfg *identity.Config, discovered bool) {
 		cfg.PublicRelay = cfg.RelayURL
 	}
 	if discovered {
+		cfg.PublicRelay = netutil.PairingAdvertisedRelay(cfg.PublicRelay, cfg.RelayURL)
 		return
 	}
-	// Colocated local default: advertise a reachable public host in the QR.
-	if identity.HostIsLoopbackRelay(cfg.PublicRelay) {
-		cfg.PublicRelay = netutil.ResolveClientRelay(cfg.PublicRelay, cfg.RelayURL)
-	}
+	cfg.PublicRelay = netutil.PairingAdvertisedRelay(cfg.PublicRelay, cfg.RelayURL)
 }
 
 func applyRE2Paths(cfg *identity.Config) {
@@ -163,6 +187,13 @@ func cmdStatus() {
 		fmt.Print(i18n.T("status.nat_yes"))
 	}
 	printHostPermissionStatus()
+	if lans := netutil.LocalLANIPv4s(); len(lans) > 0 {
+		parts := make([]string, 0, len(lans))
+		for _, ip := range lans {
+			parts = append(parts, ip.String())
+		}
+		fmt.Print(i18n.T("status.lan", strings.Join(parts, ", ")))
+	}
 }
 
 func printHostPermissionStatus() {
@@ -171,16 +202,17 @@ func printHostPermissionStatus() {
 	}
 	p := desktop.CheckHostPermissions()
 	yes, no := i18n.T("status.perm_yes"), i18n.T("status.perm_no")
-	if p.ScreenRecording {
-		fmt.Print(i18n.T("status.perm_screen", yes))
-	} else {
-		fmt.Print(i18n.T("status.perm_screen", no))
+	write := func(key string, ok bool) {
+		if ok {
+			fmt.Print(i18n.T(key, yes))
+		} else {
+			fmt.Print(i18n.T(key, no))
+		}
 	}
-	if p.Accessibility {
-		fmt.Print(i18n.T("status.perm_ax", yes))
-	} else {
-		fmt.Print(i18n.T("status.perm_ax", no))
-	}
+	write("status.perm_screen", p.ScreenRecording)
+	write("status.perm_ax", p.Accessibility)
+	write("status.perm_mic", p.Microphone)
+	write("status.perm_camera", p.Camera)
 }
 
 func logHostPermissions(p desktop.HostPermissions) {
@@ -246,16 +278,15 @@ func cmdPair() {
 	applyNetworkPrefs(cfg)
 	if *relay != "" {
 		cfg.RelayURL = *relay
-		cfg.RelayManual = true
 	}
 	if *public != "" {
 		cfg.PublicRelay = *public
 	}
-	discovered := applyRelayDiscovery(cfg, *relay)
+	discovered, alts := applyRelayDiscovery(cfg, *relay)
 	finalizePublicRelay(cfg, discovered)
 	applyRE2Paths(cfg)
 
-	a := &Agent{id: id, cfg: cfg}
+	a := &Agent{id: id, cfg: cfg, altRelays: alts}
 	noiseKP, err := identity.LoadOrCreateNoiseStatic()
 	if err != nil {
 		log.Fatal(err)
@@ -297,15 +328,11 @@ func cmdRun() {
 	applyNetworkPrefs(cfg)
 	if *relay != "" {
 		cfg.RelayURL = *relay
-		cfg.RelayManual = true
-	}
-	if identity.RelayExplicitlySet() {
-		cfg.RelayManual = true
 	}
 	if *public != "" {
 		cfg.PublicRelay = *public
 	}
-	discovered := applyRelayDiscovery(cfg, *relay)
+	discovered, alts := applyRelayDiscovery(cfg, *relay)
 	finalizePublicRelay(cfg, discovered)
 	applyRE2Paths(cfg)
 	_ = identity.SaveConfig(cfg)
@@ -314,17 +341,28 @@ func cmdRun() {
 	audit.Log("agent_start", cfg.RelayURL)
 
 	a := &Agent{
-		id:       id,
-		cfg:      cfg,
-		sessions: make(map[string]*ptyx.Session),
-		printQR:  !*noQR,
-		clip:     desktop.NewClipboardHub(),
-		xferNames: make(map[string]string),
+		id:          id,
+		cfg:         cfg,
+		sessions:    make(map[string]*ptyx.Session),
+		printQR:     !*noQR,
+		clip:        desktop.NewClipboardHub(),
+		xferNames:   make(map[string]string),
 		sessionIdle: envDuration("RE_SESSION_IDLE", 30*time.Minute),
+		altRelays:   alts,
 	}
 
-	// macOS: request Screen Recording + Accessibility up front so remote desktop works.
-	logHostPermissions(desktop.EnsureHostPermissions())
+	// macOS: never auto-prompt TCC; only report current grants.
+	logHostPermissions(desktop.CheckHostPermissions())
+	if runtime.GOOS == "darwin" {
+		p := desktop.CheckHostPermissions()
+		if !p.ScreenRecording || !p.Accessibility {
+			// Defer to tray/UI permissions panel when possible; CLI just logs.
+			i18n.Log("log.perm_open_panel_hint")
+		}
+		if err := desktop.StartVirtualFromEnv(); err != nil {
+			log.Printf("vdisplay: %v", err)
+		}
+	}
 
 	stopAwake := keepalive.Start()
 	defer stopAwake()
@@ -335,6 +373,7 @@ func cmdRun() {
 	go func() {
 		<-sig
 		i18n.Log("log.shutting_down")
+		_ = desktop.DestroyAllVirtual()
 		stopAwake()
 		a.closeAll()
 		os.Exit(0)
@@ -360,33 +399,146 @@ type Agent struct {
 	mu       sync.Mutex
 	printQR  bool
 
-	re2Conn      *re2.Conn
-	re2Sess      *re2.Session
-	noiseKP      *re2.StaticKeyPair
-	pairingToken      string
-	pairingExpiresAt  int64 // unix seconds; reused across reconnects until expired
+	re2Conn          *re2.Conn
+	re2Sess          *re2.Session
+	noiseKP          *re2.StaticKeyPair
+	pairingToken     string
+	pairingExpiresAt int64 // unix seconds; reused across reconnects until expired
 
-	udpEP        *reudp.Endpoint
-	useUDP       bool
-	udpHostPort  string
-	deskCancel   context.CancelFunc
-	deskCap      desktop.Capturer
-	deskInj      desktop.Injector
-	deskEnc      desktop.Encoder
-	deskSID      string
-	deskFrameID  uint32
-	deskABR      *desktop.ABRController
-	clip         *desktop.ClipboardHub
-	xferNames    map[string]string // fileID -> safe basename
-	audioPlayer  *desktop.AudioPlayer
-	cam          *desktop.CameraCapture
-	camCancel    context.CancelFunc
-	relativeMouse bool
-	lastActivity time.Time
-	sessionIdle  time.Duration
+	udpEP       *reudp.Endpoint
+	useUDP      bool
+	udpHostPort string
+	// Gap-tolerant video AEAD (derived after UDP Noise). Nil on WSS-only sessions.
+	videoMedia *re2.VideoMedia
+	// Serialize UDP Noise XX so concurrent msg1/msg3 (LAN retry / stale cipher)
+	// cannot MAC-fail finish and push the App onto WSS·Relay.
+	udpNoiseMu sync.Mutex
+	// After relay peer_gone while PreferDirect is live: grace then clear crypto
+	// if the App never came back on UDP (avoids zombie Noise + WSS fallback).
+	udpStaleTimer *time.Timer
+	// Serialize Encrypt+Send so Noise nonces match wire order (control vs ping/stats).
+	re2SendMu   sync.Mutex
+	deskCancel  context.CancelFunc
+	deskCap     desktop.Capturer
+	deskInj     desktop.Injector
+	deskEnc     desktop.Encoder
+	deskEncW    int
+	deskEncH    int
+	deskSID     string
+	deskFrameID uint32
+	deskABR     *desktop.ABRController
+	// Capture ceiling from the live capturer — soft quality reopen only when
+	// the new OPEN fits inside this box (avoids SCK teardown → peer_gone).
+	deskCapMaxW int
+	deskCapMaxH int
+	// After soft quality reopen, next encode must be IDR (minKeyGap would
+	// otherwise emit P-frames against a freshly Reconfigure'd VT session).
+	deskForceKey atomic.Bool
+	// Soft quality resize applied on the encode goroutine (never Close VT
+	// while desktopPump may be mid-Encode — that hung the pump and left
+	// pic stuck at the previous SPS after READY advertised a new size).
+	deskResizePending bool
+	deskResizeW       int
+	deskResizeH       int
+	deskResizeFPS     int
+	deskResizeBR      int
+	deskResizeHEVC    bool
+	// READY after soft resize is deferred until the pump has swapped the
+	// encoder and sent the first IDR — video_plane can outrun reliable READY,
+	// and a client decoder reset on READY must not wipe SPS from a key that
+	// already arrived.
+	deskReadyPending  []byte
+	deskForceKeyUntil time.Time
+	// Pace soft-reopen / post-READY forced IDRs. forceKeyUntil used to mark
+	// *every* capture frame as a key for 3–5s → IDR storm (App assembler never
+	// finished a 672p key; RX looked like 0 kb/s after quality menu).
+	deskLastSoftKeyAt time.Time
+	// deskVideoPlane: this OPEN uses best-effort video AEAD (not Noise Encrypt).
+	deskVideoPlane bool
+	// Recent IDR fragments are retained briefly for client part-NACK repair.
+	// Protected by mu; only raw inner-video bodies are cached (never ciphertext).
+	deskKeyFrames map[uint32]desktopKeyframeCache
+	deskKeyOrder  []uint32
+	// Serialize async OPEN handlers — concurrent openDesktop (hard Start + soft
+	// reopen) raced: second closeDesktop killed the first mid-Start → App
+	// DESKTOP_READY timeout on UDP·Relay / WSS quality reopen.
+	deskOpenMu       sync.Mutex
+	clip             *desktop.ClipboardHub
+	xferNames        map[string]string // fileID -> safe basename
+	audioPlayer      *desktop.AudioPlayer
+	cam              *desktop.CameraCapture
+	camCancel        context.CancelFunc
+	phoneCam         *desktop.PhoneCamSink
+	phoneCamSID      string
+	phoneCamFrameID  uint32
+	phoneCamParts    map[int][]byte
+	phoneCamExpected int
+	phoneCamFrameKey bool
+	phoneCamFramesOK atomic.Uint64
+	// phoneCamWriteBusy: drop inbound frames while a prior write is still
+	// draining — never block the RE2/UDP read loop (full AkVCam pipes freeze desktop).
+	phoneCamWriteBusy atomic.Bool
+	relativeMouse     bool
+	lastActivity      time.Time
+	sessionIdle       time.Duration
+
+	// Desktop input is handled off the WSS/UDP read path so mouse floods cannot
+	// stall Decrypt→ReadFrame or contend with video WriteFrame scheduling.
+	inputCh      chan desktopInputEvent
+	inputNextID  uint64
+	inputPending map[uint64]desktopInputEvent
 
 	// Optional UI hook (tray): fired when remote desktop opens/closes.
 	onDesktopChange func(active bool)
+
+	// Alternate public relays (failover / QR relays[]). Same pairing token is offered there.
+	altRelays      []string
+	secondaryMu    sync.Mutex
+	secondaryConns []*re2.Conn
+
+	// Snapshot for status UI (controller / remote session).
+	controlPeer   string
+	controlSince  time.Time
+	controlDeskOn bool
+}
+
+// ControlStatus is a read-only snapshot for tray/status UI.
+type ControlStatus struct {
+	DesktopActive bool
+	DesktopSID    string
+	PeerAddr      string
+	Since         time.Time
+	PTYSessions   int
+}
+
+func (a *Agent) controlStatus() ControlStatus {
+	if a == nil {
+		return ControlStatus{}
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	st := ControlStatus{
+		DesktopActive: a.deskSID != "",
+		DesktopSID:    a.deskSID,
+		PeerAddr:      a.controlPeer,
+		Since:         a.controlSince,
+		PTYSessions:   len(a.sessions),
+	}
+	return st
+}
+
+func (a *Agent) noteControlPeerLocked() {
+	peer := ""
+	if a.re2Conn != nil && a.re2Conn.WS != nil {
+		if ra := a.re2Conn.WS.RemoteAddr(); ra != nil {
+			peer = ra.String()
+		}
+	}
+	a.controlPeer = peer
+	if a.controlSince.IsZero() {
+		a.controlSince = time.Now()
+	}
+	a.controlDeskOn = a.deskSID != ""
 }
 
 func (a *Agent) closeAll() {
@@ -445,6 +597,7 @@ func (a *Agent) openSession(data re2.OpenSessionPayload) error {
 	}
 	a.mu.Lock()
 	a.sessions[data.SessionID] = s
+	a.noteControlPeerLocked()
 	a.mu.Unlock()
 
 	go a.pumpStdoutRE2(s)

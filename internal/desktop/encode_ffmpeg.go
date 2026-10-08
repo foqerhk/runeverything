@@ -9,18 +9,20 @@ import (
 	"time"
 )
 
-// ffmpegEncoder keeps a persistent ffmpeg process for low-latency H.264.
+// ffmpegEncoder keeps a persistent ffmpeg process for low-latency H.264/HEVC.
 type ffmpegEncoder struct {
 	mu        sync.Mutex
 	w, h, fps int
 	bitrateK  int
 	codec     string
+	bin       string
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
 	stdout    io.ReadCloser
 	outCh     chan []byte
 	errCh     chan error
 	closed    bool
+	primed    bool // libx265 often withholds the first AU until a second input frame
 }
 
 func newFFmpegEncoder(width, height, fps, bitrateK int, codec string) (*ffmpegEncoder, error) {
@@ -32,17 +34,39 @@ func newFFmpegEncoder(width, height, fps, bitrateK int, codec string) (*ffmpegEn
 	}
 	width &^= 1
 	height &^= 1
-	e := &ffmpegEncoder{w: width, h: height, fps: fps, bitrateK: bitrateK, codec: codec}
+	bin, err := lookPath("ffmpeg")
+	if err != nil {
+		return nil, err
+	}
+	e := &ffmpegEncoder{w: width, h: height, fps: fps, bitrateK: bitrateK, codec: codec, bin: bin}
 	if err := e.start(); err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
+func (e *ffmpegEncoder) CodecName() string {
+	switch e.codec {
+	case "hevc_videotoolbox", "libx265":
+		return CodecH265
+	default:
+		return CodecH264
+	}
+}
+
+func (e *ffmpegEncoder) hevc() bool {
+	return e.codec == "hevc_videotoolbox" || e.codec == "libx265"
+}
+
 func (e *ffmpegEncoder) buildArgs() []string {
 	size := fmt.Sprintf("%dx%d", e.w, e.h)
 	br := fmt.Sprintf("%dk", e.bitrateK)
 	maxr := fmt.Sprintf("%dk", e.bitrateK*2)
+	gop := max(e.fps, 1)
+	if e.w > 8192 || e.h > 8192 {
+		// 16K libx265 is multi-second/frame — keep GOP short so IDRs stay frequent.
+		gop = max(gop, 2)
+	}
 	commonIn := []string{
 		"-loglevel", "error",
 		"-fflags", "nobuffer",
@@ -57,6 +81,29 @@ func (e *ffmpegEncoder) buildArgs() []string {
 		return append(commonIn,
 			"-c:v", "h264_videotoolbox", "-b:v", br, "-realtime", "1", "-bf", "0",
 			"-pix_fmt", "yuv420p", "-f", "h264", "pipe:1")
+	case "hevc_videotoolbox":
+		return append(commonIn,
+			"-c:v", "hevc_videotoolbox", "-b:v", br, "-realtime", "1", "-bf", "0",
+			"-pix_fmt", "yuv420p", "-tag:v", "hvc1", "-f", "hevc", "pipe:1")
+	case "libx265":
+		// Full-blood 16K: Apple VT refuses >8192; libx265 ultrafast is the LAN path.
+		// Cap vbv tightly so the first IDR stays assemblable over REUDP (~1.2KB parts).
+		brK := e.bitrateK
+		if (e.w > 8192 || e.h > 8192) && brK > 12000 {
+			brK = 12000
+		}
+		br = fmt.Sprintf("%dk", brK)
+		maxr = fmt.Sprintf("%dk", brK*3/2)
+		buf := fmt.Sprintf("%dk", brK)
+		x265 := fmt.Sprintf("log-level=error:keyint=%d:min-keyint=%d:scenecut=0:repeat-headers=1:frame-threads=1:bframes=0:rc-lookahead=0:vbv-maxrate=%d:vbv-bufsize=%d", gop, gop, brK, brK)
+		return append(commonIn,
+			"-c:v", "libx265", "-preset", "ultrafast", "-tune", "zerolatency",
+			"-b:v", br, "-maxrate", maxr, "-bufsize", buf,
+			"-g", strconv.Itoa(gop), "-bf", "0",
+			"-x265-params", x265,
+			"-pix_fmt", "yuv420p",
+			"-muxdelay", "0", "-muxpreload", "0",
+			"-f", "hevc", "-flush_packets", "1", "pipe:1")
 	case "h264_mf":
 		return append(commonIn,
 			"-c:v", "h264_mf", "-b:v", br, "-bf", "0",
@@ -77,13 +124,22 @@ func (e *ffmpegEncoder) buildArgs() []string {
 		return append(commonIn,
 			"-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
 			"-b:v", br, "-maxrate", maxr, "-bufsize", maxr,
-			"-g", strconv.Itoa(max(e.fps, 1)), "-bf", "0", "-x264-params", "scenecut=0:keyint="+strconv.Itoa(max(e.fps, 1)),
+			"-g", strconv.Itoa(gop), "-bf", "0", "-x264-params", "scenecut=0:keyint="+strconv.Itoa(gop),
 			"-pix_fmt", "yuv420p", "-f", "h264", "-flush_packets", "1", "pipe:1")
 	}
 }
 
 func (e *ffmpegEncoder) start() error {
-	cmd := exec.Command("ffmpeg", e.buildArgs()...)
+	bin := e.bin
+	if bin == "" {
+		var err error
+		bin, err = lookPath("ffmpeg")
+		if err != nil {
+			return err
+		}
+		e.bin = bin
+	}
+	cmd := exec.Command(bin, e.buildArgs()...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -101,56 +157,163 @@ func (e *ffmpegEncoder) start() error {
 	e.cmd = cmd
 	e.stdin = stdin
 	e.stdout = stdout
-	e.outCh = make(chan []byte, 4)
+	e.outCh = make(chan []byte, 8)
 	e.errCh = make(chan error, 1)
 	e.closed = false
+	e.primed = false
 	go e.readLoop()
 	return nil
 }
 
 func (e *ffmpegEncoder) readLoop() {
-	buf := make([]byte, 0, 512*1024)
-	tmp := make([]byte, 64*1024)
-	for {
-		n, err := e.stdout.Read(tmp)
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
-			for {
-				au, rest, ok := popH264AU(buf)
-				if !ok {
-					break
-				}
-				buf = rest
-				select {
-				case e.outCh <- au:
-				default:
-					// drop if consumer is slow
-				}
+	type chunk struct {
+		b   []byte
+		err error
+	}
+	hevc := e.hevc()
+	ch := make(chan chunk, 8)
+	go func() {
+		tmp := make([]byte, 256*1024)
+		for {
+			n, err := e.stdout.Read(tmp)
+			if n > 0 {
+				cp := make([]byte, n)
+				copy(cp, tmp[:n])
+				ch <- chunk{b: cp}
+			}
+			if err != nil {
+				ch <- chunk{err: err}
+				return
 			}
 		}
-		if err != nil {
+	}()
+
+	idleMs := 40 * time.Millisecond
+	if e.w > 8192 || e.h > 8192 {
+		idleMs = 120 * time.Millisecond
+	}
+	var buf []byte
+	var idleC <-chan time.Time
+	var idle *time.Timer
+	stopIdle := func() {
+		if idle == nil {
+			return
+		}
+		if !idle.Stop() {
 			select {
-			case e.errCh <- err:
+			case <-idleC:
 			default:
 			}
-			return
+		}
+		idle, idleC = nil, nil
+	}
+	armIdle := func() {
+		stopIdle()
+		idle = time.NewTimer(idleMs)
+		idleC = idle.C
+	}
+	emit := func(force bool) {
+		for {
+			au, rest, ok := popAnnexBAU(buf, hevc, force)
+			if !ok {
+				break
+			}
+			buf = rest
+			// Blocking send — dropping a fat 16K IDR leaves iOS stuck on 1512p.
+			select {
+			case e.outCh <- au:
+			case err := <-e.errCh:
+				// Surface prior error; re-queue for Encode.
+				select {
+				case e.errCh <- err:
+				default:
+				}
+				return
+			}
+		}
+	}
+
+	for {
+		select {
+		case c := <-ch:
+			if len(c.b) > 0 {
+				buf = append(buf, c.b...)
+				emit(false)
+				armIdle()
+			}
+			if c.err != nil {
+				stopIdle()
+				emit(true)
+				select {
+				case e.errCh <- c.err:
+				default:
+				}
+				return
+			}
+		case <-idleC:
+			idle, idleC = nil, nil
+			emit(true)
 		}
 	}
 }
 
-func popH264AU(buf []byte) (au, rest []byte, ok bool) {
+// popAnnexBAU returns one access unit: leading parameter-set NALs + first VCL NAL.
+// requireComplete=false only emits when a following start code delimits the VCL
+// (prevents the classic 64KiB truncate on the first stdout Read of a fat IDR).
+// requireComplete=true also emits a trailing VCL (EOF / idle flush).
+func popAnnexBAU(buf []byte, hevc bool, requireComplete bool) (au, rest []byte, ok bool) {
 	if len(buf) < 8 {
 		return nil, buf, false
 	}
 	starts := findStartCodes(buf)
-	if len(starts) < 2 {
-		// If buffer is large, emit whole buffer as one AU once we see at least one start code.
-		if len(starts) == 1 && len(buf) > 32*1024 {
-			return buf, nil, true
-		}
+	if len(starts) == 0 {
 		return nil, buf, false
 	}
-	return buf[starts[0]:starts[1]], buf[starts[1]:], true
+	vclIdx := -1
+	for i, sc := range starts {
+		nalOff := startCodeNALOffset(buf, sc)
+		if nalOff < 0 || nalOff >= len(buf) {
+			continue
+		}
+		if annexBIsVCL(buf[nalOff], hevc) {
+			vclIdx = i
+			break
+		}
+	}
+	if vclIdx < 0 {
+		return nil, buf, false
+	}
+	if vclIdx+1 < len(starts) {
+		end := starts[vclIdx+1]
+		return buf[starts[0]:end], buf[end:], true
+	}
+	if !requireComplete {
+		return nil, buf, false
+	}
+	if len(buf)-starts[vclIdx] < 16 {
+		return nil, buf, false
+	}
+	return buf[starts[0]:], nil, true
+}
+
+func startCodeNALOffset(buf []byte, sc int) int {
+	if sc+4 <= len(buf) && buf[sc] == 0 && buf[sc+1] == 0 && buf[sc+2] == 0 && buf[sc+3] == 1 {
+		return sc + 4
+	}
+	if sc+3 <= len(buf) && buf[sc] == 0 && buf[sc+1] == 0 && buf[sc+2] == 1 {
+		return sc + 3
+	}
+	return -1
+}
+
+func annexBIsVCL(nalHeader byte, hevc bool) bool {
+	if hevc {
+		nt := int((nalHeader >> 1) & 0x3F)
+		// Trails / TSA / STSA / RADL / RASL / BLA / IDR / CRA
+		return nt <= 21
+	}
+	nt := nalHeader & 0x1F
+	return nt == 1 || nt == 5
 }
 
 func findStartCodes(b []byte) []int {
@@ -200,14 +363,19 @@ func (e *ffmpegEncoder) Encode(f Frame, keyframe bool) ([]byte, error) {
 		_ = e.closeLocked()
 		return nil, fmt.Errorf("ffmpeg write: %w", err)
 	}
-	// Some builds of libx264 buffer one frame; nudge with a duplicate write once.
-	if keyframe {
+	// libx264/libx265 often buffer one frame before emitting; duplicate nudge
+	// primes the pipeline (critical for first 16K AU with stdin kept open).
+	if (keyframe || !e.primed) && (e.codec == "libx264" || e.codec == "libx265" || e.codec == "") {
 		_, _ = e.stdin.Write(pix)
 	}
-	_ = keyframe
 	deadline := 4 * time.Second
+	if e.w > 8192 || e.h > 8192 || e.codec == "libx265" {
+		// 16K libx265 ultrafast is ~2–4s/frame on Apple Silicon; duplicate prime ≈2×.
+		deadline = 45 * time.Second
+	}
 	select {
 	case au := <-e.outCh:
+		e.primed = true
 		return au, nil
 	case err := <-e.errCh:
 		_ = e.closeLocked()
@@ -216,6 +384,7 @@ func (e *ffmpegEncoder) Encode(f Frame, keyframe bool) ([]byte, error) {
 		// last resort: emit whatever we buffered as one AU
 		select {
 		case au := <-e.outCh:
+			e.primed = true
 			return au, nil
 		default:
 			return nil, fmt.Errorf("ffmpeg: encode timeout")

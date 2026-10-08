@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	Magic0   = 0x52 // 'R'
-	Magic1   = 0x32 // '2'
-	Version  = 0x02
+	Magic0     = 0x52 // 'R'
+	Magic1     = 0x32 // '2'
+	Version    = 0x02
 	MaxPayload = 1 << 20
 )
 
@@ -33,43 +33,49 @@ const (
 
 // Inner (E2E plaintext) message types.
 const (
-	MsgOpenSession   byte = 0x01
-	MsgSessionReady  byte = 0x02
-	MsgSessionClose  byte = 0x03
-	MsgResize        byte = 0x04
-	MsgPTYData       byte = 0x05
-	MsgPing          byte = 0x06
-	MsgPong          byte = 0x07
-	MsgAppError      byte = 0x0F
+	MsgOpenSession  byte = 0x01
+	MsgSessionReady byte = 0x02
+	MsgSessionClose byte = 0x03
+	MsgResize       byte = 0x04
+	MsgPTYData      byte = 0x05
+	MsgPing         byte = 0x06
+	MsgPong         byte = 0x07
+	MsgAppError     byte = 0x0F
 
 	// Remote desktop (RE2.1+)
-	MsgOpenDesktop   byte = 0x20
-	MsgDesktopReady  byte = 0x21
-	MsgDesktopClose  byte = 0x22
-	MsgVideo         byte = 0x23
-	MsgInputMouse    byte = 0x24
-	MsgInputKey      byte = 0x25
-	MsgInputTouch    byte = 0x26
-	MsgAudio         byte = 0x30
-	MsgClipboard     byte = 0x31
-	MsgCursor        byte = 0x32 // cursor position (separate from video)
-	MsgDisplays      byte = 0x33 // display list / select
-	MsgStats         byte = 0x34 // client→agent RTT/loss feedback for ABR
-	MsgKeyframeReq   byte = 0x35 // client requests IDR
-	MsgFileOffer     byte = 0x40
-	MsgFileChunk     byte = 0x41
-	MsgFileAck       byte = 0x42
-	MsgFilePull      byte = 0x43 // client→agent: request agent to send a local file
-	MsgFileList      byte = 0x44 // list directory under xfer root
-	MsgInputMode     byte = 0x45 // relative/game mouse, lock keys sync
-	MsgHolePunch     byte = 0x50 // P2P UDP hole-punch signaling (still via relay E2E)
-	MsgPairConfirm   byte = 0x51 // agent-local confirm before bind succeeds
-	MsgAudit         byte = 0x52 // optional audit event (agent→client or local log)
-	MsgWakeOnLAN     byte = 0x60
-	MsgCameraOpen    byte = 0x70
-	MsgCameraClose   byte = 0x71
-	MsgCameraFrame   byte = 0x72
-	MsgCameraList    byte = 0x73
+	MsgOpenDesktop  byte = 0x20
+	MsgDesktopReady byte = 0x21
+	MsgDesktopClose byte = 0x22
+	MsgVideo        byte = 0x23
+	MsgInputMouse   byte = 0x24
+	MsgInputKey     byte = 0x25
+	MsgInputTouch   byte = 0x26
+	MsgAudio        byte = 0x30
+	MsgClipboard    byte = 0x31
+	MsgCursor       byte = 0x32 // cursor position (separate from video)
+	MsgDisplays     byte = 0x33 // display list / select
+	MsgStats        byte = 0x34 // client→agent RTT/loss feedback for ABR
+	MsgKeyframeReq  byte = 0x35 // client requests IDR
+	MsgVideoNACK    byte = 0x36 // client requests missing parts of the latest IDR
+	MsgFileOffer    byte = 0x40
+	MsgFileChunk    byte = 0x41
+	MsgFileAck      byte = 0x42
+	MsgFilePull     byte = 0x43 // client→agent: request agent to send a local file
+	MsgFileList     byte = 0x44 // list directory under xfer root
+	MsgInputMode    byte = 0x45 // relative/game mouse, lock keys sync
+	MsgHolePunch    byte = 0x50 // P2P UDP hole-punch signaling (still via relay E2E)
+	MsgPairConfirm  byte = 0x51 // agent-local confirm before bind succeeds
+	MsgAudit        byte = 0x52 // optional audit event (agent→client or local log)
+	MsgWakeOnLAN    byte = 0x60
+	MsgCameraOpen   byte = 0x70 // agent host camera → phone (preview)
+	MsgCameraClose  byte = 0x71
+	MsgCameraFrame  byte = 0x72 // direction depends on open direction
+	MsgCameraList   byte = 0x73
+	// Phone-as-webcam: phone camera → agent virtual webcam device.
+	MsgPhoneCamOpen  byte = 0x74 // client→agent: prepare virtual webcam sink
+	MsgPhoneCamClose byte = 0x75 // client→agent
+	MsgPhoneCamFrame byte = 0x76 // client→agent: MJPEG/H264 chunks (CameraFramePayload)
+	MsgPhoneCamReady byte = 0x77 // agent→client: sink ready / error
 	MsgUSBList       byte = 0x80
 	MsgUSBAttach     byte = 0x81
 	MsgUSBDetach     byte = 0x82
@@ -77,6 +83,9 @@ const (
 	MsgPrinterList   byte = 0x90
 	MsgPrinterJob    byte = 0x91
 	MsgPrinterAck    byte = 0x92
+	// AI chat inventory (Cursor / Claude / Codex / Gemini) — data only, no desktop.
+	MsgAgentChatList   byte = 0xA0 // client↔agent list request/response
+	MsgAgentChatDetail byte = 0xA1 // reserved: session detail (stub for now)
 )
 
 var (

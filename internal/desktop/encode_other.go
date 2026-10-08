@@ -13,6 +13,12 @@ func NewEncoder(width, height, fps int) (Encoder, error) {
 }
 
 func NewEncoderBitrate(width, height, fps, bitrateK int) (Encoder, error) {
+	return NewEncoderBitrateCodec(width, height, fps, bitrateK, false)
+}
+
+// NewEncoderBitrateCodec: Linux ignores hevc for now (H.264 path).
+func NewEncoderBitrateCodec(width, height, fps, bitrateK int, hevc bool) (Encoder, error) {
+	_ = hevc
 	if fps <= 0 {
 		fps = 15
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/foqerhk/runeverything/internal/netutil"
 )
@@ -16,6 +17,7 @@ const (
 	DefaultDirName = ".runeverything"
 	IdentityFile   = "identity.json"
 	ConfigFile     = "config.json"
+	UDPListenFile  = "udp_listen.json"
 )
 
 type Identity struct {
@@ -153,12 +155,16 @@ func LoadConfig() (*Config, error) {
 	}
 	if v := os.Getenv("RE_RELAY"); v != "" {
 		cfg.RelayURL = v
-		cfg.RelayManual = true
+		// Do not set RelayManual here: RE_RELAY already disables discovery via
+		// ShouldAutoDiscover, while relay_manual is the user's persistent pin preference.
 	}
 	if cfg.PublicRelay == "" {
 		cfg.PublicRelay = cfg.RelayURL
 	}
-	cfg.PublicRelay = netutil.ResolveClientRelay(cfg.PublicRelay, cfg.RelayURL)
+	// Keep an explicit WAN public_relay (e.g. wss://…) — never rewrite to LAN.
+	if netutil.RelayURLHostIsUnreliableOnWAN(cfg.PublicRelay) {
+		cfg.PublicRelay = netutil.PairingAdvertisedRelay(cfg.PublicRelay, cfg.RelayURL)
+	}
 	return &cfg, nil
 }
 
@@ -173,6 +179,51 @@ func SaveConfig(cfg *Config) error {
 		return err
 	}
 	return os.WriteFile(path, raw, 0o600)
+}
+
+// udpListenState is the sticky Agent LAN UDP port (QR lan:port).
+type udpListenState struct {
+	Port int `json:"port"`
+}
+
+// PreferredUDPListenPort returns RE_UDP_PORT if set, else the last sticky port
+// from ~/.runeverything/udp_listen.json (0 = pick ephemeral).
+func PreferredUDPListenPort() int {
+	if v := strings.TrimSpace(os.Getenv("RE_UDP_PORT")); v != "" {
+		var p int
+		if _, err := fmt.Sscanf(v, "%d", &p); err == nil && p > 0 && p <= 65535 {
+			return p
+		}
+	}
+	dir, err := HomeDir()
+	if err != nil {
+		return 0
+	}
+	b, err := os.ReadFile(filepath.Join(dir, UDPListenFile))
+	if err != nil {
+		return 0
+	}
+	var st udpListenState
+	if json.Unmarshal(b, &st) != nil || st.Port <= 0 || st.Port > 65535 {
+		return 0
+	}
+	return st.Port
+}
+
+// SaveUDPListenPort remembers the bound LAN UDP port for the next Agent start.
+func SaveUDPListenPort(port int) error {
+	if port <= 0 || port > 65535 {
+		return nil
+	}
+	dir, err := EnsureHome()
+	if err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(udpListenState{Port: port}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, UDPListenFile), raw, 0o600)
 }
 
 func PlatformInfo() (osName, arch string) {

@@ -120,23 +120,62 @@ func SelectBestLatencyAndLoad(ctx context.Context, candidates []string, stickyPr
 
 // DiscoverBest is seeds → crawl → latency+busy scoring.
 func DiscoverBest(ctx context.Context, stickyPreferred string) (string, []ProbeResult, error) {
+	urls, results, err := DiscoverTop(ctx, stickyPreferred, 1)
+	if err != nil {
+		return "", results, err
+	}
+	if len(urls) == 0 {
+		return "", results, errNoHealthy
+	}
+	return urls[0], results, nil
+}
+
+// DiscoverTop returns up to n healthy relays sorted by latency+busy (best first).
+func DiscoverTop(ctx context.Context, stickyPreferred string, n int) ([]string, []ProbeResult, error) {
+	if n < 1 {
+		n = 1
+	}
 	cands, err := Crawl(ctx, stickyPreferred)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	log.Printf("p2p crawl: %d candidates", len(cands))
 	best, scored, err := SelectBestLatencyAndLoad(ctx, cands, stickyPreferred)
 	if err != nil {
-		return DiscoverBestPing(ctx, stickyPreferred)
+		u, results, err2 := DiscoverBestPing(ctx, stickyPreferred)
+		if err2 != nil {
+			return nil, results, err2
+		}
+		return []string{u}, results, nil
 	}
 	results := make([]ProbeResult, 0, len(scored))
+	var healthy []ScoredRelay
 	for _, s := range scored {
 		pr := ProbeResult{URL: s.URL, RTT: s.RTT}
 		if s.Score >= 1e11 {
 			pr.Err = errNoHealthy
+		} else {
+			healthy = append(healthy, s)
 		}
 		results = append(results, pr)
 	}
-	log.Printf("p2p: selected %s (latency+busy scoring)", best)
-	return best, results, nil
+	sort.SliceStable(healthy, func(i, j int) bool { return healthy[i].Score < healthy[j].Score })
+	out := make([]string, 0, n)
+	seen := map[string]bool{}
+	if best != "" {
+		out = append(out, best)
+		seen[best] = true
+	}
+	for _, s := range healthy {
+		if len(out) >= n {
+			break
+		}
+		if seen[s.URL] {
+			continue
+		}
+		out = append(out, s.URL)
+		seen[s.URL] = true
+	}
+	log.Printf("p2p: selected %v (latency+busy top-%d)", out, n)
+	return out, results, nil
 }

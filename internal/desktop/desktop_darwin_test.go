@@ -8,7 +8,7 @@ import (
 )
 
 func TestVideoToolboxEncodeSmoke(t *testing.T) {
-	enc, err := newVideoToolboxEncoder(320, 180, 10)
+	enc, err := newVideoToolboxEncoder(320, 180, 10, 1500, false)
 	if err != nil {
 		t.Fatalf("vt create: %v", err)
 	}

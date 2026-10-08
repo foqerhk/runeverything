@@ -9,9 +9,21 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
+// EncodeQRPNG returns a PNG encoding of the pairing payload as a QR code.
+func EncodeQRPNG(p *protocol.PairingPayload, size int) ([]byte, error) {
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	if size <= 0 {
+		size = 512
+	}
+	return qrcode.Encode(string(raw), qrcode.Medium, size)
+}
+
 // WriteQRPNG writes a pairing QR code PNG and returns the file path.
 func WriteQRPNG(p *protocol.PairingPayload, dir string) (string, error) {
-	raw, err := json.Marshal(p)
+	png, err := EncodeQRPNG(p, 512)
 	if err != nil {
 		return "", err
 	}
@@ -20,7 +32,7 @@ func WriteQRPNG(p *protocol.PairingPayload, dir string) (string, error) {
 	}
 	_ = os.MkdirAll(dir, 0o755)
 	path := filepath.Join(dir, "runeverything-pair.png")
-	if err := qrcode.WriteFile(string(raw), qrcode.Medium, 512, path); err != nil {
+	if err := os.WriteFile(path, png, 0o644); err != nil {
 		return "", err
 	}
 	return path, nil

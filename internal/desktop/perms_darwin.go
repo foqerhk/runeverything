@@ -3,10 +3,11 @@
 package desktop
 
 /*
-#cgo LDFLAGS: -framework CoreGraphics -framework ApplicationServices -framework CoreFoundation
+#cgo LDFLAGS: -framework CoreGraphics -framework ApplicationServices -framework CoreFoundation -framework AVFoundation -framework Foundation
 #include <CoreGraphics/CoreGraphics.h>
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include "perms_media_darwin.h"
 
 static int re_screen_preflight(void) {
 	if (CGPreflightScreenCaptureAccess()) return 1;
@@ -33,26 +34,105 @@ static int re_ax_trusted(int prompt) {
 */
 import "C"
 import (
+	"context"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
+	"time"
 )
 
 // HostPermissions summarizes macOS privacy grants needed for remote desktop.
 type HostPermissions struct {
 	ScreenRecording bool
 	Accessibility   bool
+	Microphone      bool
+	Camera          bool
 }
-
-var permsOnce sync.Once
 
 // CheckHostPermissions reports current TCC-related grants (no prompts).
 func CheckHostPermissions() HostPermissions {
 	return HostPermissions{
 		ScreenRecording: C.re_screen_preflight() == 1,
 		Accessibility:   C.re_ax_trusted(0) == 1,
+		Microphone:      C.re_mic_authorized() == 1,
+		Camera:          C.re_camera_authorized() == 1,
 	}
 }
+
+// HostPermissionsEffective is in-process grant state plus “granted after
+// restart” detection. macOS often keeps CGPreflightScreenCaptureAccess false
+// in a long-lived process until that process is relaunched.
+type HostPermissionsEffective struct {
+	HostPermissions
+	ScreenNeedsRestart bool
+	AxNeedsRestart     bool
+}
+
+// CheckHostPermissionsEffective probes a fresh helper process when this
+// process still reports denied, so the UI can show “restart to apply”.
+func CheckHostPermissionsEffective() HostPermissionsEffective {
+	p := CheckHostPermissions()
+	out := HostPermissionsEffective{HostPermissions: p}
+	if p.ScreenRecording && p.Accessibility {
+		return out
+	}
+	fresh, ok := probeFreshPermissions()
+	if !ok {
+		return out
+	}
+	if !p.ScreenRecording && fresh.ScreenRecording {
+		out.ScreenNeedsRestart = true
+	}
+	if !p.Accessibility && fresh.Accessibility {
+		out.AxNeedsRestart = true
+	}
+	return out
+}
+
+func probeFreshPermissions() (HostPermissions, bool) {
+	probeMu.Lock()
+	if time.Since(probeAt) < 2*time.Second && probeOK {
+		v := probeCache
+		probeMu.Unlock()
+		return v, true
+	}
+	probeMu.Unlock()
+
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return HostPermissions{}, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "__re_perm_check")
+	cmd.Env = append(os.Environ(), "RE_PERM_PROBE=1")
+	out, err := cmd.Output()
+	if err != nil {
+		return HostPermissions{}, false
+	}
+	s := strings.TrimSpace(string(out))
+	if len(s) < 2 {
+		return HostPermissions{}, false
+	}
+	v := HostPermissions{
+		ScreenRecording: s[0] == '1',
+		Accessibility:   s[1] == '1',
+	}
+	probeMu.Lock()
+	probeAt = time.Now()
+	probeCache = v
+	probeOK = true
+	probeMu.Unlock()
+	return v, true
+}
+
+var (
+	probeMu    sync.Mutex
+	probeAt    time.Time
+	probeCache HostPermissions
+	probeOK    bool
+)
 
 // RequestScreenRecording triggers the system Screen Recording prompt when possible.
 func RequestScreenRecording() bool {
@@ -65,6 +145,26 @@ func RequestAccessibility() bool {
 	_ = C.re_ax_trusted(1)
 	return C.re_ax_trusted(0) == 1
 }
+
+// RequestMicrophone shows the mic permission sheet when still NotDetermined.
+// Returns true if already authorized. If previously denied, returns false
+// (caller should open Privacy settings — OS will not re-prompt).
+func RequestMicrophone() bool {
+	C.re_mic_request()
+	return C.re_mic_authorized() == 1
+}
+
+// RequestCamera shows the camera permission sheet when still NotDetermined.
+func RequestCamera() bool {
+	C.re_camera_request()
+	return C.re_camera_authorized() == 1
+}
+
+// MicrophoneCanPrompt is true while TCC status is NotDetermined.
+func MicrophoneCanPrompt() bool { return C.re_mic_can_prompt() == 1 }
+
+// CameraCanPrompt is true while TCC status is NotDetermined.
+func CameraCanPrompt() bool { return C.re_camera_can_prompt() == 1 }
 
 // OpenPrivacySettings opens the matching macOS Privacy & Security pane.
 func OpenPrivacySettings(kind string) error {
@@ -84,29 +184,9 @@ func OpenPrivacySettings(kind string) error {
 	return exec.Command("open", url).Start()
 }
 
-// EnsureHostPermissions requests Screen Recording + Accessibility when missing,
-// and optionally opens System Settings (unless RE_OPEN_PRIVACY=0).
+// EnsureHostPermissions reports grants without prompting. Prefer the permissions
+// panel so users can read explanations before opening System Settings.
 func EnsureHostPermissions() HostPermissions {
-	p := CheckHostPermissions()
-	if !p.ScreenRecording {
-		_ = RequestScreenRecording()
-		p.ScreenRecording = C.re_screen_preflight() == 1
-	}
-	if !p.Accessibility {
-		_ = RequestAccessibility()
-		p.Accessibility = C.re_ax_trusted(0) == 1
-	}
-	permsOnce.Do(func() {
-		if os.Getenv("RE_OPEN_PRIVACY") == "0" {
-			return
-		}
-		if !p.ScreenRecording {
-			_ = OpenPrivacySettings("screen")
-		}
-		if !p.Accessibility {
-			_ = OpenPrivacySettings("accessibility")
-		}
-	})
 	return CheckHostPermissions()
 }
 

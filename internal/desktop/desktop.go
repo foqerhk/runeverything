@@ -6,9 +6,12 @@ import (
 	"time"
 )
 
-// Frame is a captured desktop frame (RGBA).
+// Frame is a captured desktop frame (RGBA), or a pre-encoded Annex-B unit
+// (darwin SCK→VT inline path for 5K HEVC — avoids Go full-panel copies).
 type Frame struct {
 	Img       *image.RGBA
+	AnnexB    []byte
+	Keyframe  bool
 	Timestamp time.Time
 }
 
@@ -31,11 +34,19 @@ type Injector interface {
 	Close() error
 }
 
-// Encoder produces H.264 Annex-B NAL units from RGBA frames.
+// Encoder produces Annex-B NAL units (H.264 or HEVC) from RGBA frames.
 type Encoder interface {
 	Encode(f Frame, keyframe bool) (annexB []byte, err error)
 	Close() error
 }
 
+// CodecNamer is optionally implemented by encoders that report the wire codec.
+type CodecNamer interface {
+	CodecName() string
+}
+
 // Codec name on the wire.
-const CodecH264 = "h264"
+const (
+	CodecH264 = "h264"
+	CodecH265 = "h265"
+)

@@ -1,0 +1,13 @@
+{
+  "name": "koko-ide-bridge",
+  "displayName": "KoKo IDE Bridge",
+  "description": "Lets the RunEverything Agent deliver KoKo phone input into IDE agent chats.",
+  "publisher": "runeverything",
+  "version": "0.2.0",
+  "license": "UNLICENSED",
+  "engines": { "vscode": "^1.80.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "extensionKind": ["ui"],
+  "contributes": {}
+}

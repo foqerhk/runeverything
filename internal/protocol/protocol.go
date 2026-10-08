@@ -29,6 +29,15 @@ type PairingPayload struct {
 	NoisePub     string   `json:"noise_pub,omitempty"`
 	UDP          string   `json:"udp,omitempty"` // host:port REUDP data plane (usually relay)
 	LAN          []string `json:"lan,omitempty"` // host:port on local LAN for same-subnet P2P
+	// Relays is an optional failover list (primary first). Same pairing token is
+	// offered on each reachable node; App tries in order when one is full/down.
+	Relays []RelayCandidate `json:"relays,omitempty"`
+}
+
+// RelayCandidate is an alternate public relay + UDP endpoint for pairing failover.
+type RelayCandidate struct {
+	Relay string `json:"relay"`
+	UDP   string `json:"udp,omitempty"`
 }
 
 func (p PairingPayload) DeepLink() string {
@@ -45,6 +54,22 @@ func (p PairingPayload) DeepLink() string {
 	}
 	if len(p.LAN) > 0 {
 		q.Set("lan", strings.Join(p.LAN, ","))
+	}
+	if len(p.Relays) > 0 {
+		parts := make([]string, 0, len(p.Relays))
+		for _, r := range p.Relays {
+			if r.Relay == "" {
+				continue
+			}
+			if r.UDP != "" {
+				parts = append(parts, r.Relay+"|"+r.UDP)
+			} else {
+				parts = append(parts, r.Relay)
+			}
+		}
+		if len(parts) > 0 {
+			q.Set("relays", strings.Join(parts, ","))
+		}
 	}
 	return "koko://pair?" + q.Encode()
 }
