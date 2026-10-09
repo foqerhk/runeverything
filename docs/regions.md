@@ -46,7 +46,16 @@ runeverything config set-geo-url 'http://ip-api.com/json/?fields=status,countryC
 
 ### 区域官方中继
 
-getnode 机器同时跑本区的官方中继（systemd `runeverything-relay.service`，二进制 `/opt/runeverything/runeverything-relay`）。国内节点对外为 `wss://8e2cee2dd1.intentcomputing.cn/re2` + UDP `8e2cee2dd1.intentcomputing.cn:8787`（TLS 由前置反代终止，中继监听 `127.0.0.1:8787`，UDP 直接对外 `:8787`）。
+getnode 机器同时跑本区的官方中继（systemd `runeverything-relay.service`，二进制 `/opt/runeverything/runeverything-relay`）。TLS 由 nginx + Let's Encrypt 终止后反代到 `127.0.0.1:8787`，UDP 直接对外 `:8787`（防火墙需放行 `8787/udp`）。
+
+| | 国内 | 国外 |
+|--|------|------|
+| WSS | `wss://8e2cee2dd1.intentcomputing.cn/re2` | `wss://ed9741c9d4.intentcomputing.net/re2` |
+| UDP | `8e2cee2dd1.intentcomputing.cn:8787` | `ed9741c9d4.intentcomputing.net:8787` |
+| DNS | 阿里云 | Cloudflare（`intentcomputing.net` zone，仅 DNS 不走代理） |
+| `/seeds.json` 来源 | 从 GitHub `docs/seeds.json` 同步 | 本机静态文件 `/var/lib/runeverything/seeds.json` |
+
+国外节点 systemd 里带 `RE_REGION=intl`，启动参数 `-public wss://ed9741c9d4.intentcomputing.net/re2 -public-udp ed9741c9d4.intentcomputing.net:8787 -share=true`。
 
 更新中继：
 
