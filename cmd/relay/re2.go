@@ -91,7 +91,19 @@ func (h *Hub) re2AgentOf(id string) *re2.Conn {
 	return d.RE2Agent
 }
 
-func (h *Hub) setRE2Client(id string, c *re2.Conn) *re2.Conn {
+type bindResult struct {
+	busy      bool
+	peer      string
+	since     time.Time
+	displaced *re2.Conn // previous controller from another install, kicked by force
+}
+
+// bindRE2Client makes c the controller for id. A bind from a different
+// non-empty ClientID while another controller is attached is refused unless
+// force is set; then the previous controller is told it was superseded.
+// Same or missing ClientID keeps the old silent-replace behavior so the
+// phone's own reconnects and old apps are unaffected.
+func (h *Hub) bindRE2Client(id string, c *re2.Conn, data re2.BindPayload) bindResult {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	d, ok := h.devices[id]
@@ -100,11 +112,25 @@ func (h *Hub) setRE2Client(id string, c *re2.Conn) *re2.Conn {
 		h.devices[id] = d
 	}
 	old := d.RE2Client
+	other := old != nil && old != c && data.ClientID != "" && d.RE2ClientID != "" && d.RE2ClientID != data.ClientID
+	if other && !data.Force {
+		return bindResult{busy: true, peer: d.RE2ClientName, since: d.RE2ClientSince}
+	}
+	var res bindResult
 	if old != nil && old != c {
-		_ = old.Close()
+		if other {
+			res.displaced = old
+		} else {
+			_ = old.Close()
+		}
+	}
+	if old != c || d.RE2ClientID != data.ClientID {
+		d.RE2ClientSince = time.Now()
 	}
 	d.RE2Client = c
-	return old
+	d.RE2ClientID = data.ClientID
+	d.RE2ClientName = data.ClientName
+	return res
 }
 
 func (h *Hub) clearRE2Client(id string, c *re2.Conn) *re2.Conn {
@@ -118,6 +144,8 @@ func (h *Hub) clearRE2Client(id string, c *re2.Conn) *re2.Conn {
 		return nil
 	}
 	d.RE2Client = nil
+	d.RE2ClientID = ""
+	d.RE2ClientName = ""
 	return d.RE2Agent
 }
 
@@ -284,14 +312,56 @@ func serveRE2Client(hub *Hub, c *re2.Conn, r *http.Request) {
 				_ = writeRE2Err(c, data.DeviceID, "offline", "device agent offline")
 				continue
 			}
-			if hub.limiter != nil && !hub.limiter.TryAcquire() {
+			if !acquired && hub.limiter != nil && !hub.limiter.TryAcquire() {
 				_ = writeRE2Err(c, data.DeviceID, "relay_full",
 					fmt.Sprintf("relay at capacity (%d sessions); try another node", hub.limiter.Max()))
 				continue
 			}
+			res := hub.bindRE2Client(data.DeviceID, c, data)
+			if res.busy {
+				if !acquired && hub.limiter != nil {
+					hub.limiter.Release()
+				}
+				_ = c.WriteFrame(re2.Frame{
+					Type:    re2.TypeError,
+					RouteID: data.DeviceID,
+					Payload: re2.MustJSON(re2.ErrorPayload{
+						Code:    "controller_busy",
+						Message: "another device is controlling this computer",
+						Peer:    res.peer,
+						Since:   res.since.Unix(),
+					}),
+				})
+				log.Printf("re2 bind busy device=%s", data.DeviceID)
+				continue
+			}
+			if res.displaced != nil {
+				_ = res.displaced.WriteFrame(re2.Frame{
+					Type:    re2.TypeError,
+					RouteID: data.DeviceID,
+					Payload: re2.MustJSON(re2.ErrorPayload{
+						Code:    "superseded",
+						Message: "another device took over this computer",
+						Peer:    data.ClientName,
+						Since:   time.Now().Unix(),
+					}),
+				})
+				_ = res.displaced.Close()
+				if agent := hub.re2AgentOf(data.DeviceID); agent != nil {
+					_ = agent.WriteFrame(re2.Frame{
+						Type:    re2.TypeError,
+						RouteID: data.DeviceID,
+						Payload: re2.MustJSON(re2.ErrorPayload{
+							Code:    "controller_changed",
+							Message: "controller replaced by force bind",
+							Peer:    data.ClientName,
+						}),
+					})
+				}
+				log.Printf("re2 bind takeover device=%s", data.DeviceID)
+			}
 			acquired = true
 			deviceID = data.DeviceID
-			hub.setRE2Client(deviceID, c)
 			_ = c.WriteFrame(re2.Frame{
 				Type:    re2.TypeBindOK,
 				RouteID: deviceID,

@@ -41,6 +41,12 @@ type PairAckPayload struct {
 type BindPayload struct {
 	DeviceID      string `json:"device_id"`
 	SessionTicket string `json:"session_ticket"`
+	// ClientID is a stable per-install controller identity (hex Noise static
+	// public key). Binds from a different ClientID while one is active are
+	// refused with controller_busy unless Force is set.
+	ClientID   string `json:"client_id,omitempty"`
+	ClientName string `json:"client_name,omitempty"`
+	Force      bool   `json:"force,omitempty"`
 }
 
 type BindOKPayload struct {
@@ -51,6 +57,9 @@ type BindOKPayload struct {
 type ErrorPayload struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Peer and Since describe the active controller for controller_busy / superseded.
+	Peer  string `json:"peer,omitempty"`
+	Since int64  `json:"since,omitempty"`
 }
 
 type OpenSessionPayload struct {

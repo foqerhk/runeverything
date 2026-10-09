@@ -266,28 +266,66 @@ func (a *Agent) startUDP(udpHostPort string) error {
 	return nil
 }
 
+// deskLivenessTimeout ends a remote desktop whose phone stopped checking in; the App
+// pings every second while viewing, so this only trips once it is really gone.
+const deskLivenessTimeout = 15 * time.Second
+
+// livenessLoop stops screen capture when the viewing phone goes silent and releases the
+// Noise peer after sessionIdle, so a phone that dropped without saying goodbye neither
+// leaves the desktop shared nor blocks the next handshake. PTY sessions keep running
+// for the phone to reattach.
+// releasePeer drops the current controller's Noise session and desktop so the
+// next handshake (from any phone, UDP or WSS) starts clean. PTY sessions stay up.
+func (a *Agent) releasePeer() {
+	a.mu.Lock()
+	a.re2Sess = nil
+	a.videoMedia = nil
+	a.useUDP = false
+	a.lastActivity = time.Time{}
+	if a.udpEP != nil {
+		a.udpEP.ClearDirect()
+	}
+	a.mu.Unlock()
+	a.cancelUDPSessionStale()
+	a.closeDesktop()
+}
+
+func (a *Agent) livenessLoop() {
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		a.mu.Lock()
+		last := a.lastActivity
+		desk := a.deskSID != ""
+		hasPeer := a.re2Sess != nil
+		idle := a.sessionIdle
+		a.mu.Unlock()
+		if last.IsZero() {
+			continue
+		}
+		silent := time.Since(last)
+		switch {
+		case hasPeer && idle > 0 && silent > idle:
+			i18n.Log("log.session_idle", idle)
+			audit.Log("session_idle_timeout", a.id.DeviceID)
+			// Keeping stale AEAD made the next reconnect's XX finish MAC-fail.
+			a.releasePeer()
+		case desk && silent > deskLivenessTimeout:
+			log.Printf("re2 desktop: no heartbeat from phone for %v — stopping remote desktop device=%s",
+				silent.Round(time.Second), a.id.DeviceID)
+			audit.Log("desktop_heartbeat_timeout", a.id.DeviceID)
+			a.closeDesktop()
+		}
+	}
+}
+
 func (a *Agent) udpReadLoop() {
 	for {
 		a.mu.Lock()
 		ep := a.udpEP
-		idle := a.sessionIdle
-		last := a.lastActivity
 		a.mu.Unlock()
 		if ep == nil {
 			return
-		}
-		if idle > 0 && !last.IsZero() && time.Since(last) > idle {
-			i18n.Log("log.session_idle", idle)
-			audit.Log("session_idle_timeout", a.id.DeviceID)
-			// App is gone (or stuck): drop Noise too. Keeping stale AEAD made the
-			// next reconnect's XX finish MAC-fail → App WSS·Relay fallback.
-			a.mu.Lock()
-			a.re2Sess = nil
-			a.videoMedia = nil
-			a.useUDP = false
-			a.lastActivity = time.Time{}
-			a.mu.Unlock()
-			a.closeDesktop()
 		}
 		payload, err := ep.RecvTimeout(2 * time.Second)
 		if err != nil {
@@ -414,10 +452,11 @@ func (a *Agent) completeUDPNoise(payload []byte) error {
 		return err
 	}
 	// New Noise ⇒ new AEAD + App seq space. Drop stale desktop (old pump would
-	// Encrypt under mixed keys) and reset reliable seq so OPEN is seq=0.
+	// Encrypt under mixed keys) and restart our outbound seq at 0. The inbound side
+	// was reset before the handshake and may already hold the client's OPEN.
 	a.closeDesktop()
 	if a.udpEP != nil {
-		a.udpEP.ResetReliableSession()
+		a.udpEP.ResetReliableSend()
 	}
 	var vm *re2.VideoMedia
 	if a2c, c2a, kerr := re2.DeriveVideoMediaKeys(psk, peerStatic, a.noiseKP.Public); kerr == nil {

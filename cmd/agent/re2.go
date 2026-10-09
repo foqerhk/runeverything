@@ -54,6 +54,7 @@ func (a *Agent) runLoopRE2() error {
 	}
 	a.noiseKP = noiseKP
 	applyRE2Paths(a.cfg)
+	a.livenessOnce.Do(func() { go a.livenessLoop() })
 
 	// Fresh signaling/UDP generation — drop any prior Noise session so a new
 	// client handshake is not mis-decrypted as tunnel ciphertext.
@@ -170,6 +171,14 @@ func (a *Agent) runLoopRE2() error {
 			var ed re2.ErrorPayload
 			_ = json.Unmarshal(f.Payload, &ed)
 			i18n.Log("log.re2_relay_error", ed.Code, ed.Message)
+			if ed.Code == "controller_changed" {
+				// Another phone forced a takeover at the relay; the old phone was
+				// told it was superseded. Drop its session (even a live UDP one) so
+				// the newcomer's handshake is accepted on whichever plane it uses.
+				log.Printf("re2 controller changed (%s) — releasing previous session device=%s", ed.Peer, a.id.DeviceID)
+				a.releasePeer()
+				continue
+			}
 			if ed.Code == "peer_gone" {
 				// BIND and the UDP media plane have independent lifetimes. On cellular,
 				// a delayed close from the pair/redeem socket can arrive just after the
@@ -431,6 +440,7 @@ func (a *Agent) handleRE2Inner(plain []byte) error {
 	if err != nil {
 		return err
 	}
+	a.touchActivity()
 	switch mt {
 	case re2.MsgOpenSession:
 		var data re2.OpenSessionPayload

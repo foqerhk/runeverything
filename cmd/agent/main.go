@@ -347,7 +347,7 @@ func cmdRun() {
 		printQR:     !*noQR,
 		clip:        desktop.NewClipboardHub(),
 		xferNames:   make(map[string]string),
-		sessionIdle: envDuration("RE_SESSION_IDLE", 30*time.Minute),
+		sessionIdle: envDuration("RE_SESSION_IDLE", 2*time.Minute),
 		altRelays:   alts,
 	}
 
@@ -481,6 +481,7 @@ type Agent struct {
 	relativeMouse     bool
 	lastActivity      time.Time
 	sessionIdle       time.Duration
+	livenessOnce      sync.Once
 
 	// Desktop input is handled off the WSS/UDP read path so mouse floods cannot
 	// stall Decrypt→ReadFrame or contend with video WriteFrame scheduling.

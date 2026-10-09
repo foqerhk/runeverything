@@ -29,6 +29,10 @@ type deviceState struct {
 	// RE2 peers (binary outer frames on /re2).
 	RE2Agent  *re2.Conn
 	RE2Client *re2.Conn
+	// Identity of the bound RE2Client (empty for old apps).
+	RE2ClientID    string
+	RE2ClientName  string
+	RE2ClientSince time.Time
 	// REUDP peers (datagram data plane).
 	UDPAgent  *net.UDPAddr
 	UDPClient *net.UDPAddr

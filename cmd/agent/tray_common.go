@@ -57,7 +57,7 @@ func startTrayAgent(onDesktop func(active bool)) (*Agent, func(), <-chan error) 
 		printQR:     false,
 		clip:        desktop.NewClipboardHub(),
 		xferNames:   make(map[string]string),
-		sessionIdle: envDuration("RE_SESSION_IDLE", 30*time.Minute),
+		sessionIdle: envDuration("RE_SESSION_IDLE", 2*time.Minute),
 		altRelays:   alts,
 	}
 	if onDesktop != nil {

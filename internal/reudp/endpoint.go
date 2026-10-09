@@ -273,6 +273,20 @@ func (ep *Endpoint) ResetReliableSession() {
 	}
 }
 
+// ResetReliableSend restarts only the outbound reliable stream. The client sends its
+// first reliable message (OPEN, seq 0) right after Noise msg3, so it can already be
+// received when the Agent finishes the handshake; resetting the inbound side then would
+// make the Agent wait for seq 0 again and hold every later message forever.
+func (ep *Endpoint) ResetReliableSend() {
+	ep.mu.Lock()
+	ep.nextSeq = 0
+	ep.inflight = make(map[uint32]*inflightPkt)
+	ep.mu.Unlock()
+	if ep.cong != nil {
+		ep.cong = NewCongestion()
+	}
+}
+
 func (ep *Endpoint) writeBytes(b []byte) error {
 	ep.mu.Lock()
 	direct := ep.directConn
