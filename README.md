@@ -251,6 +251,9 @@ Agent 运行时会自动防闲置睡眠（macOS `caffeinate`、Windows Away Mode
 |------|------|
 | `runeverything` / `runeverything run` | 连接 Relay，常驻并提供远程会话 |
 | `runeverything pair` | 刷新配对令牌并打印二维码 |
+| `runeverything qr` | 重新打印当前二维码（不刷新令牌） |
+| `runeverything tray` | 菜单栏 / 托盘模式（macOS 推荐，含二维码窗口与权限面板） |
+| `runeverything ide-mirror cursor <composerId>` | 把 Cursor IDE 对话镜像进终端，供 KoKo 原生显示（由 App 自动调用） |
 | `runeverything status` | 显示 device_id、Relay、NAT、配置路径 |
 | `runeverything config` | 查看 / 更换公网 IP 检测与地区判定接口 |
 | `runeverything version` | 打印版本号 |
@@ -289,6 +292,13 @@ runeverything config reset-endpoints   # 清回内置默认
 | `RE_KEEP_AWAKE` | Agent 运行时阻止闲置睡眠 | `1`（`0` 关闭） |
 | `RE_HOME` | 身份与配置目录 | `~/.runeverything` |
 | `RE_LANG` | 强制界面/日志语言 `zh` / `en`（`zh-TW` 等繁体也用简体） | 跟随系统语言 |
+| `RE_SESSION_IDLE` | 手机无流量多久后释放加密会话（PTY 保留；远程桌面 15s 无心跳先关闭） | `2m` |
+| `RE_PAIR_CONFIRM` | `1`：手机打开桌面前在本机弹窗确认 | 关闭 |
+| `RE_ACCESS_PASSWORD` | 会话口令，手机打开桌面时须输入 | 空 |
+| `RE_XFER_ROOT` | 文件传输 / 浏览的根目录 | `~/.runeverything/xfer` |
+| `RE_UDP_PORT` | Agent 固定 UDP 端口（局域网直连用；默认会复用上次端口） | 自动 |
+| `RE_VDISPLAY` | macOS 虚拟显示器（如 `8k`） | 关闭 |
+| `RE_MAX_SESSIONS` | Relay 最大并发会话（不设则按 `RE_BW_MBPS_UP` / `RE_PER_USER_KBPS` 推算） | 自动 |
 
 ### 语言
 
@@ -318,7 +328,7 @@ Agent 文案与日志按系统语言自动切换：
 
 ## 开发者本地联调
 
-需要 Go 1.25+。
+需要 Go 1.26+（见 `go.mod`）。
 
 ```bash
 go build -o bin/relay ./cmd/relay
@@ -342,6 +352,9 @@ go build -o bin/retest ./cmd/retest
 - [架构说明](docs/architecture.md)
 - [协议规范（RE2）](docs/protocol-v2.md)
 - [KoKo 对齐交接](docs/koko-re2-handoff.md)
+- [国内外区域与官方中继部署](docs/regions.md)
+- [macOS Agent 本地联调](docs/agent-macos-local-dev.md)
+- [远程桌面测试用例](docs/remote-desktop-test-cases.md)
 - [分发渠道（install.sh / apt / rpm / winget…）](docs/distribution.md)
 
 ## 许可证

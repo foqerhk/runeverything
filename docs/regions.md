@@ -43,3 +43,19 @@ runeverything config set-geo-url 'http://ip-api.com/json/?fields=status,countryC
 - **国外**：已在 `208.113.214.106` 部署 Intl getnode + 管理台；zone 配 `runeverything.online`，域名 `getnode.intentcomputing.net`（SSH `34417`）
 
 两套 state / admin / seeds **互不同步**，避免节点与用户元数据跨境。
+
+### 区域官方中继
+
+getnode 机器同时跑本区的官方中继（systemd `runeverything-relay.service`，二进制 `/opt/runeverything/runeverything-relay`）。国内节点对外为 `wss://8e2cee2dd1.intentcomputing.cn/re2` + UDP `8e2cee2dd1.intentcomputing.cn:8787`（TLS 由前置反代终止，中继监听 `127.0.0.1:8787`，UDP 直接对外 `:8787`）。
+
+更新中继：
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
+  -o /tmp/runeverything-relay-linux ./cmd/relay
+# 上传为 /opt/runeverything/runeverything-relay.new，备份旧文件后替换
+systemctl restart runeverything-relay
+curl -s http://127.0.0.1:8787/healthz   # → ok
+```
+
+中继状态（配对令牌、session_ticket、当前控制端）只在内存里：**重启后已配对手机需重新扫码**，尽量避开使用高峰。协议改动应保持向后兼容（旧客户端不带新字段时按旧行为处理），国内外节点可以分别升级。

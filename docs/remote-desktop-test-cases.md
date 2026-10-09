@@ -49,13 +49,14 @@
 - **步骤**：设口令后分别用正确/错误/空口令 OPEN  
 - **期望**：正确进入；错误拒绝且可重试  
 
-### RD-PAIR-06 第二客户端互踢（P1）
-- **步骤**：设备 A 已远控；设备 B 同 token 接入  
-- **期望**：A 被顶掉并提示；B 取得控制；无双端同时写键鼠  
+### RD-PAIR-06 第二控制端确认接管（P1）
+- **步骤**：设备 A 已远控；设备 B 连同一台电脑（E2E：B 用 `-RE2E2EStored`，再加 `-RE2E2EForce`）  
+- **期望**：B 未确认时收到 `controller_busy`，提示「A 正在控制这台电脑」，A 不受影响；B 确认后接管，A 收到 `superseded`、提示「已在另一台设备上连接」且不自动重连；Agent 日志有 `controller changed`；无双端同时写键鼠  
+- **补充**：A 自己重连（同一 `client_id`）不应触发提示  
 
-### RD-PAIR-07 空闲超时 `RE_SESSION_IDLE`（P2）
-- **步骤**：建立桌面后长时间无操作（默认约 30m，测试可调短）  
-- **期望**：会话断开；再操作需重连；audit 有记录  
+### RD-PAIR-07 心跳与空闲释放（P2）
+- **步骤**：建立桌面后让手机停止发送（杀掉 App 或断网）；另测 `RE_SESSION_IDLE` 调短后的空闲  
+- **期望**：约 15s 后 Agent 关闭远程桌面（日志 `no heartbeat from phone`）；`RE_SESSION_IDLE`（默认 2m）后释放 Noise 会话，PTY / AI 会话仍在；手机回来可正常重新握手；audit 有记录  
 
 ---
 

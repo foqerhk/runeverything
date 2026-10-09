@@ -14,8 +14,9 @@
 
 ## 要做（客户端）
 
-1. QR **`v:3`**：`relay` + **`udp`** + `noise_pub` + token…
-2. wss 信令 PAIR/BIND → REUDP ASSOC → Noise → **OPEN_DESKTOP**
+1. QR **`v:3`**：`relay` + **`udp`** + `noise_pub` + `lan[]` + token…
+2. wss 信令 PAIR/BIND → 局域网 `REHP1` 探测或 REUDP ASSOC → Noise → **OPEN_DESKTOP**；UDP 不通退回 WSS 隧道
+   - BIND 带 `client_id`（每次安装固定）、`client_name`、`force`（见 protocol-v2「控制端独占」）
 3. **H.264 硬解**播放 VIDEO 分片；丢包发 `STATS` / `KEYFRAME_REQ`
 4. **光标层**单独画 `CURSOR`（勿依赖画面里的指针）
 5. **多显示器**：处理 `DESKTOP_READY.displays` / `DISPLAYS` select
@@ -24,8 +25,11 @@
 8. **文件** FILE_OFFER / FILE_CHUNK / FILE_ACK
 9. **音频** AUDIO（opus/pcm16）可选
 10. **打洞** HOLE_PUNCH（offer/candidate）；失败保持中继
-11. 后台保活；断线自动 BIND+Noise 重连（同 pairing_token 生命周期内）
+11. 后台保活；断线自动 BIND+Noise 重连（用 session_ticket，不再兑换二维码；PSK 来自当时扫的 pairing_token）
 12. 配对过期 / `relay_full` / Agent 离线错误提示（引导换节点或重扫）
+13. 在线期间持续发心跳（空闲约 10s 一次），否则 Agent 15s 关桌面、2m 释放会话
+14. `controller_busy`：弹窗显示对方设备名，确认后 `force` 重连；`superseded`：提示「已在另一台设备上连接」并停止自动重连
+15. AI 会话：IDE 对话走 PTY 内 OSC 7788/7789/7790，手机原生渲染 Markdown、工具调用和提问卡片
 
 ## 中继与选路（公益）
 
@@ -37,9 +41,9 @@
 
 - 扫码即授权；可选 Agent 侧 `RE_PAIR_CONFIRM=1` 本机确认
 - 可选会话口令：`RE_ACCESS_PASSWORD` + OPEN_DESKTOP.`password`
-- 会话空闲 `RE_SESSION_IDLE`（默认 30m）断开
+- 会话空闲 `RE_SESSION_IDLE`（默认 2m）释放 Noise 会话；桌面 15s 无心跳先关闭；PTY 不受影响
 - Agent 写 `~/.runeverything/audit.log`
-- 第二客户端默认**顶掉**前一个（互踢）
+- 同时只有一个控制端：后来者先看到「某设备正在控制」，确认后才接管，被接管方收到 `superseded`（旧版中继仍是直接顶掉）
 - 文件落盘 `~/.runeverything/xfer/`（按原始文件名，已净化路径）
 - Agent 多屏：真枚举 + 选屏采集；硬编优先（Win MF / macOS VT / Linux VAAPI）；ABR 跟 STATS
 - 采集优先 ffmpeg（Win gdigrab，`RE_CAPTURE=dda` 可试 ddagrab；macOS avfoundation；Linux x11grab）
@@ -61,11 +65,13 @@
 | DISPLAYS 0x33 | 列表/选屏 |
 | STATS 0x34 | RTT/丢包/jitter/decode_delay/stall/recv_kbps → ABR |
 | KEYFRAME_REQ 0x35 | 要关键帧 |
+| VIDEO_NACK 0x36 | 补发最新 IDR 的缺片 |
 | FILE_* 0x40–42 | 文件上传 |
 | FILE_PULL 0x43 | 客户端拉取 Agent 文件 |
 | FILE_LIST 0x44 | 目录列表 |
 | INPUT_MODE 0x45 | 相对鼠标/锁定键 |
 | HOLE_PUNCH 0x50 | P2P |
+| PAIR_CONFIRM 0x51 / AUDIT 0x52 | 本机确认 / 审计事件 |
 | WOL 0x60 | 网络唤醒 |
 | CAMERA_* 0x70–73 | 远程桌面摄像头（Agent 主机摄像头 → 手机预览） |
 | PHONECAM_* 0x74–77 | 用手机当摄像头（手机 → Agent 虚拟摄像头 KoKo Phone Camera） |
@@ -77,4 +83,4 @@
 
 ## 给写 KoKo 的一句话
 
-> 实现公益远控客户端：无登录；扫码 v3；wss+REUDP+Noise；硬解 H.264；光标层、多屏、剪贴板、文件、STATS/ABR、打洞回退中继；满员与离线有清晰 UX。
+> 实现公益远控客户端：无登录；扫码 v3；wss+REUDP+Noise；硬解 H.264；光标层、多屏、剪贴板、文件、STATS/ABR、局域网直连/打洞回退中继；心跳保活；单控制端确认接管；满员与离线有清晰 UX。
