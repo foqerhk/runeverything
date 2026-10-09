@@ -65,18 +65,30 @@ type mirror struct {
 	rend      renderer
 	lastIdx   int
 	lastState string
+
+	chatReset bool
+	sentChat  map[int]string
+	pendingQ  int // lowest idx of an unanswered questionnaire, re-polled until settled; -1 none
+	questions map[string]chatQuestion
+	answered  map[string][]questionAnswer // replies sent from the phone, by tool call id
 }
+
+// A questionnaire answered by a chat reply can stay "pending" in Cursor's store forever;
+// stop re-polling it once the conversation has moved this far past it.
+const maxQuestionLag = 40
 
 // Run blocks until the user exits (Ctrl-D) or stdin closes.
 func Run(opt Options) error {
 	if opt.History <= 0 {
-		opt.History = 40
+		opt.History = 150
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	m := &mirror{opt: opt, home: home, desk: newDesk(), out: os.Stdout, lastIdx: -1}
+	m := &mirror{opt: opt, home: home, desk: newDesk(), out: os.Stdout, lastIdx: -1,
+		chatReset: true, sentChat: map[int]string{}, pendingQ: -1, questions: map[string]chatQuestion{},
+		answered: map[string][]questionAnswer{}}
 
 	restore := rawMode()
 	defer restore()
@@ -188,14 +200,37 @@ func (m *mirror) fail(err error) {
 func (m *mirror) poll() {
 	m.mu.Lock()
 	from := m.rend.next
+	if m.pendingQ >= 0 && from-m.pendingQ > maxQuestionLag {
+		m.pendingQ = -1
+	}
+	if m.pendingQ >= 0 && m.pendingQ < from {
+		from = m.pendingQ
+	}
 	m.mu.Unlock()
 	rows, err := m.store.bubbles(from)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if len(rows) == 0 {
+		if m.chatReset {
+			m.chatReset = false
+			m.publishChatLocked(nil, true)
+		}
+		return
+	}
 	m.lastIdx = rows[len(rows)-1].Idx
+	for _, b := range rows {
+		if b.Have && strings.HasPrefix(b.Tool, "ask_question") && b.ToolCallID != "" {
+			if q, ok := parseQuestion(b); ok {
+				m.questions[b.ToolCallID] = q
+			}
+		}
+	}
+	m.settlePendingQuestionLocked(rows)
+	m.publishChatLocked(rows, m.chatReset)
+	m.chatReset = false
 	if s := m.rend.feed(rows, time.Now()); s != "" {
 		m.emitLocked(s)
 	}
@@ -340,9 +375,11 @@ func (m *mirror) edit(f func([]rune) []rune) {
 
 // action is one structured request from KoKo (mode/model switch, review decisions).
 type action struct {
-	Op   string `json:"op"`
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
+	Op      string           `json:"op"`
+	ID      string           `json:"id,omitempty"`
+	Name    string           `json:"name,omitempty"`
+	Text    string           `json:"text,omitempty"`
+	Answers []questionAnswer `json:"answers,omitempty"`
 }
 
 func decodeAction(seq string) (action, error) {

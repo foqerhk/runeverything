@@ -11,6 +11,7 @@ import (
 // chatState is the structured view KoKo renders above the terminal.
 type chatState struct {
 	V              int          `json:"v"`
+	Chat           int          `json:"chat"` // >0: structured messages arrive as OSC 7790
 	Kind           string       `json:"kind"`
 	ComposerID     string       `json:"composerId"`
 	Name           string       `json:"name"`
@@ -42,7 +43,7 @@ func (m *mirror) publishState() {
 	meta := m.meta
 	m.mu.Unlock()
 	st := chatState{
-		V: 1, Kind: "cursor-ide", ComposerID: m.opt.ComposerID,
+		V: 1, Chat: 1, Kind: "cursor-ide", ComposerID: m.opt.ComposerID,
 		Name: meta.Name, Cwd: meta.Cwd, Mode: meta.Mode, Modes: m.modes,
 		Model: meta.Model, Models: m.models, ContextPercent: meta.ContextPercent,
 		LinesAdded: meta.LinesAdded, LinesRemoved: meta.LinesRemoved,

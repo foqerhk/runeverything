@@ -53,6 +53,11 @@ type bubble struct {
 	Args     string `json:"args"`
 	Thinking bool   `json:"thinking"`
 	Have     bool   `json:"have"` // false until Cursor has written the bubble row
+	// ask_question only: raw params / result JSON and questionnaire status.
+	ToolCallID string `json:"toolCallId"`
+	QParams    string `json:"qparams"`
+	QStatus    string `json:"qstatus"`
+	QResult    string `json:"qresult"`
 }
 
 func newCursorStore(db, composerID string) (*cursorStore, error) {
@@ -211,7 +216,13 @@ select json_object(
     json_extract(p, '$.query'), json_extract(p, '$.searchTerm'), json_extract(p, '$.url'),
     json_extract(p, '$.description'), ''), 1, 300) else '' end,
   'thinking', json(case when json_extract(v, '$.thinking') is not null then 'true' else 'false' end),
-  'have', json(case when bkey is not null then 'true' else 'false' end))
+  'have', json(case when bkey is not null then 'true' else 'false' end),
+  'toolCallId', coalesce(json_extract(v, '$.toolFormerData.toolCallId'), ''),
+  'qparams', case when json_extract(v, '$.toolFormerData.name') like 'ask_question%%' then coalesce(p, '') else '' end,
+  'qstatus', case when json_extract(v, '$.toolFormerData.name') like 'ask_question%%'
+    then coalesce(json_extract(v, '$.toolFormerData.additionalData.status'), '') else '' end,
+  'qresult', case when json_extract(v, '$.toolFormerData.name') like 'ask_question%%'
+    then coalesce(json_extract(v, '$.toolFormerData.result'), '') else '' end)
 from j
 order by idx`, s.id, from))
 	if err != nil {

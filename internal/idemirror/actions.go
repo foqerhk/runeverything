@@ -46,6 +46,18 @@ func (m *mirror) runAction(a action) error {
 		m.mu.Unlock()
 		m.modes, m.models, _ = m.store.options()
 		return nil
+	case "send":
+		text := strings.TrimSpace(a.Text)
+		if text == "" {
+			return nil
+		}
+		m.setStatus(m.t("发送中…", "sending…"))
+		return m.deliver(text)
+	case "answer":
+		return m.answer(a.ID, a.Answers)
+	case "resync":
+		m.resyncChat()
+		return nil
 	}
 	return fmt.Errorf("unknown action %q", a.Op)
 }
@@ -135,6 +147,50 @@ func (m *mirror) deliver(line string) error {
 		time.Sleep(400 * time.Millisecond)
 	}
 	return errors.New(m.t("已发送，但没确认到 Cursor 收到消息，请在电脑上检查", "Sent, but Cursor did not confirm the message; check the computer"))
+}
+
+// answer replies to a Cursor questionnaire. Cursor exposes no command to submit one, so
+// the selections go in as a chat message: Cursor skips the pending questionnaire and the
+// model reads the reply.
+func (m *mirror) answer(toolCallID string, answers []questionAnswer) error {
+	m.mu.Lock()
+	q, ok := m.questions[toolCallID]
+	m.mu.Unlock()
+	if !ok {
+		return errors.New(m.t("找不到这个提问，可能已经过期", "That question is no longer available"))
+	}
+	text := answerText(q, answers)
+	if text == "" {
+		return errors.New(m.t("还没有选择任何选项", "No option selected"))
+	}
+	m.setStatus(m.t("发送回答…", "sending answer…"))
+	if err := m.deliver(text); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.answered[toolCallID] = answers
+	m.mu.Unlock()
+	m.poll()
+	return nil
+}
+
+// resyncChat resends the recent conversation from scratch for a phone that (re)attached
+// and has no messages yet.
+func (m *mirror) resyncChat() {
+	meta, err := m.store.meta()
+	if err != nil {
+		return
+	}
+	rows, err := m.store.bubbles(max(meta.Count-m.opt.History, 0))
+	if err != nil {
+		return
+	}
+	m.mu.Lock()
+	m.lastState = ""
+	m.publishChatLocked(rows, true)
+	m.chatReset = false
+	m.mu.Unlock()
+	m.publishState()
 }
 
 func (m *mirror) cancel() error {
