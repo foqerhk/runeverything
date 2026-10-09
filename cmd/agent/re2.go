@@ -100,10 +100,15 @@ func (a *Agent) runLoopRE2() error {
 	// screen-sharing state cannot stick after the phone is already gone.
 	defer a.endRemoteControl()
 
+	defer a.dropDataChannel("relay_closed")
+
 	for {
 		f, err := a.re2Conn.ReadFrame()
 		if err != nil {
 			return err
+		}
+		if a.handleDataFrame(f) {
+			continue
 		}
 		switch f.Type {
 		case re2.TypeNoise:
@@ -140,6 +145,9 @@ func (a *Agent) runLoopRE2() error {
 				continue
 			}
 			a.re2Sess = sess
+			// livenessLoop would otherwise judge the new session by the previous
+			// peer's last activity and drop it as idle right away.
+			a.touchActivity()
 			i18n.Log("log.re2_noise_ok", a.id.DeviceID)
 			log.Printf("re2 media plane=WSS·Relay device=%s", a.id.DeviceID)
 			trayCloseQRWindow()
@@ -177,6 +185,7 @@ func (a *Agent) runLoopRE2() error {
 				// the newcomer's handshake is accepted on whichever plane it uses.
 				log.Printf("re2 controller changed (%s) — releasing previous session device=%s", ed.Peer, a.id.DeviceID)
 				a.releasePeer()
+				a.dropDataChannel("controller_changed")
 				continue
 			}
 			if ed.Code == "peer_gone" {
@@ -206,9 +215,12 @@ func (a *Agent) runLoopRE2() error {
 					a.armUDPSessionStale(3 * time.Second)
 					continue
 				}
+				a.mu.Lock()
 				a.re2Sess = nil
 				a.videoMedia = nil
 				a.useUDP = false
+				a.lastActivity = time.Time{}
+				a.mu.Unlock()
 				// Client left: stop desktop capture (macOS screen-sharing indicator)
 				// and PTY sessions; do not tear down the agent↔relay socket.
 				a.endRemoteControl()
@@ -284,6 +296,7 @@ func (a *Agent) registerRE2() error {
 		OS:           osName,
 		Arch:         arch,
 		NoisePub:     identity.NoisePublicB64URL(a.noiseKP),
+		Channels:     true,
 	})
 	if err := a.re2Conn.WriteFrame(re2.Frame{
 		Type:    re2.TypeRegister,
@@ -661,7 +674,7 @@ func (a *Agent) handleRE2Inner(plain []byte) error {
 		// would otherwise delay mouse decrypt / enqueue under load.
 		bodyCopy := append([]byte(nil), body...)
 		go func() {
-			if err := a.handleAgentChat(mt, bodyCopy); err != nil {
+			if err := a.handleAgentChat(mt, bodyCopy, a.sendRE2Inner); err != nil {
 				log.Printf("agent chat: %v", err)
 			}
 		}()
@@ -689,14 +702,19 @@ func (a *Agent) closeAllSessionsOnly() {
 	a.endRemoteControl()
 }
 
-// endRemoteControl stops desktop capture/inject and all PTY sessions, and clears
-// "being controlled" UI state. Safe to call repeatedly.
+// endRemoteControl stops desktop capture/inject and the desktop channel's PTY
+// sessions, and clears "being controlled" UI state. Data-channel PTYs have their
+// own lifetime (dropDataChannel). Safe to call repeatedly.
 func (a *Agent) endRemoteControl() {
 	a.closeDesktop()
 	a.mu.Lock()
 	for id, s := range a.sessions {
+		if a.sessionChan[id] == re2.ChannelData {
+			continue
+		}
 		_ = s.Close()
 		delete(a.sessions, id)
+		delete(a.sessionChan, id)
 	}
 	a.controlPeer = ""
 	a.controlSince = time.Time{}
@@ -711,15 +729,20 @@ func (a *Agent) endRemoteControl() {
 
 // pumpStdoutRE2 is used when RE2 session is active (override binary pump).
 func (a *Agent) pumpStdoutRE2(s *ptyx.Session) {
+	onData := a.sessionOwner(s.ID) == re2.ChannelData
+	send := a.sendRE2Inner
+	if onData {
+		send = a.sendData
+	}
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := s.Read(buf)
 		if n > 0 {
-			if a.re2Sess == nil || a.re2Conn == nil {
+			if !onData && (a.re2Sess == nil || a.re2Conn == nil) {
 				break
 			}
 			body := re2.EncodePTY(s.ID, buf[:n])
-			if werr := a.sendRE2Inner(re2.MsgPTYData, body); werr != nil {
+			if werr := send(re2.MsgPTYData, body); werr != nil {
 				break
 			}
 		}
@@ -728,7 +751,7 @@ func (a *Agent) pumpStdoutRE2(s *ptyx.Session) {
 				i18n.Log("log.session_read", s.ID, err)
 			}
 			a.closeSession(s.ID, "pty_exit")
-			_ = a.sendRE2Inner(re2.MsgSessionClose, re2.MustJSON(re2.SessionClosePayload{
+			_ = send(re2.MsgSessionClose, re2.MustJSON(re2.SessionClosePayload{
 				SessionID: s.ID,
 				Reason:    "pty_exit",
 			}))

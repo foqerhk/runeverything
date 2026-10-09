@@ -27,9 +27,13 @@ type deviceState struct {
 	Secret string
 	Name   string
 	// RE2 peers (binary outer frames on /re2).
-	RE2Agent  *re2.Conn
-	RE2Client *re2.Conn
-	// Identity of the bound RE2Client (empty for old apps).
+	RE2Agent *re2.Conn
+	// RE2AgentChannels: the agent understands ChannelData routes.
+	RE2AgentChannels bool
+	RE2Client        *re2.Conn
+	// RE2DataClient is the same controller's data channel (re2.ChannelData).
+	RE2DataClient *re2.Conn
+	// Identity of the controller holding RE2Client / RE2DataClient (empty for old apps).
 	RE2ClientID    string
 	RE2ClientName  string
 	RE2ClientSince time.Time
@@ -84,6 +88,9 @@ func (h *Hub) connectionLoad() int {
 			n++
 		}
 		if d.RE2Client != nil {
+			n++
+		}
+		if d.RE2DataClient != nil {
 			n++
 		}
 	}

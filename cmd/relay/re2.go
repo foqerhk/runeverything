@@ -45,7 +45,7 @@ func logOpaque(typ byte, routeID string, payloadLen int) {
 	log.Printf("re2 forward type=%s route=%s len=%d", re2.FrameTypeName(typ), routeID, payloadLen)
 }
 
-func (h *Hub) setRE2Agent(id, secret, name string, c *re2.Conn) error {
+func (h *Hub) setRE2Agent(id, secret, name string, channels bool, c *re2.Conn) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	d, ok := h.devices[id]
@@ -62,10 +62,35 @@ func (h *Hub) setRE2Agent(id, secret, name string, c *re2.Conn) error {
 	d.Secret = secret
 	d.Name = name
 	d.RE2Agent = c
+	d.RE2AgentChannels = channels
 	return nil
 }
 
-func (h *Hub) clearRE2Agent(id string, c *re2.Conn) *re2.Conn {
+// routedConn is a client connection and the RouteID its frames travel under.
+type routedConn struct {
+	conn  *re2.Conn
+	route string
+}
+
+func (d *deviceState) clientSlot(channel string) **re2.Conn {
+	if channel == re2.ChannelData {
+		return &d.RE2DataClient
+	}
+	return &d.RE2Client
+}
+
+func (d *deviceState) boundClients() []routedConn {
+	var out []routedConn
+	if d.RE2Client != nil {
+		out = append(out, routedConn{d.RE2Client, d.ID})
+	}
+	if d.RE2DataClient != nil {
+		out = append(out, routedConn{d.RE2DataClient, re2.ChannelRoute(d.ID, re2.ChannelData)})
+	}
+	return out
+}
+
+func (h *Hub) clearRE2Agent(id string, c *re2.Conn) []routedConn {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	d, ok := h.devices[id]
@@ -76,12 +101,22 @@ func (h *Hub) clearRE2Agent(id string, c *re2.Conn) *re2.Conn {
 		return nil
 	}
 	d.RE2Agent = nil
-	peer := d.RE2Client
+	d.RE2AgentChannels = false
+	peers := d.boundClients()
 	d.RE2Client = nil
-	return peer
+	d.RE2DataClient = nil
+	return peers
 }
 
-func (h *Hub) re2AgentOf(id string) *re2.Conn {
+func (h *Hub) re2AgentChannels(id string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	d := h.devices[id]
+	return d != nil && d.RE2AgentChannels
+}
+
+func (h *Hub) re2AgentOf(route string) *re2.Conn {
+	id, _ := re2.SplitRoute(route)
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	d := h.devices[id]
@@ -92,17 +127,19 @@ func (h *Hub) re2AgentOf(id string) *re2.Conn {
 }
 
 type bindResult struct {
-	busy      bool
-	peer      string
-	since     time.Time
-	displaced *re2.Conn // previous controller from another install, kicked by force
+	busy  bool
+	peer  string
+	since time.Time
+	// displaced: every channel of the previous controller (another install), kicked by force.
+	displaced []routedConn
 }
 
-// bindRE2Client makes c the controller for id. A bind from a different
-// non-empty ClientID while another controller is attached is refused unless
-// force is set; then the previous controller is told it was superseded.
-// Same or missing ClientID keeps the old silent-replace behavior so the
-// phone's own reconnects and old apps are unaffected.
+// bindRE2Client attaches c to channel data.Channel of device id. Exclusivity is
+// per controller (install), not per channel: one phone may hold the desktop and
+// data channels together, and a bind from a different non-empty ClientID while
+// either is attached is refused unless force is set — then both of the previous
+// controller's channels are superseded. Same or missing ClientID silently
+// replaces only the same channel so a phone's own reconnects and old apps work.
 func (h *Hub) bindRE2Client(id string, c *re2.Conn, data re2.BindPayload) bindResult {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -111,52 +148,73 @@ func (h *Hub) bindRE2Client(id string, c *re2.Conn, data re2.BindPayload) bindRe
 		d = &deviceState{ID: id}
 		h.devices[id] = d
 	}
-	old := d.RE2Client
-	other := old != nil && old != c && data.ClientID != "" && d.RE2ClientID != "" && d.RE2ClientID != data.ClientID
+	slot := d.clientSlot(data.Channel)
+	held := false
+	for _, rc := range d.boundClients() {
+		if rc.conn != c {
+			held = true
+		}
+	}
+	other := held && data.ClientID != "" && d.RE2ClientID != "" && d.RE2ClientID != data.ClientID
 	if other && !data.Force {
 		return bindResult{busy: true, peer: d.RE2ClientName, since: d.RE2ClientSince}
 	}
 	var res bindResult
-	if old != nil && old != c {
-		if other {
-			res.displaced = old
-		} else {
-			_ = old.Close()
-		}
+	if other {
+		res.displaced = d.boundClients()
+		d.RE2Client = nil
+		d.RE2DataClient = nil
+	} else if old := *slot; old != nil && old != c {
+		_ = old.Close()
 	}
-	if old != c || d.RE2ClientID != data.ClientID {
+	if !held || d.RE2ClientID != data.ClientID {
 		d.RE2ClientSince = time.Now()
 	}
-	d.RE2Client = c
-	d.RE2ClientID = data.ClientID
-	d.RE2ClientName = data.ClientName
+	*slot = c
+	if data.ClientID != "" || !held {
+		if data.ClientName != "" || d.RE2ClientID != data.ClientID {
+			d.RE2ClientName = data.ClientName
+		}
+		d.RE2ClientID = data.ClientID
+	}
 	return res
 }
 
-func (h *Hub) clearRE2Client(id string, c *re2.Conn) *re2.Conn {
+// clearRE2Client detaches c and returns the agent plus the RouteID it served.
+func (h *Hub) clearRE2Client(id string, c *re2.Conn) (*re2.Conn, string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	d, ok := h.devices[id]
 	if !ok {
-		return nil
+		return nil, ""
 	}
-	if d.RE2Client != c {
-		return nil
+	var route string
+	switch c {
+	case d.RE2Client:
+		d.RE2Client = nil
+		route = id
+	case d.RE2DataClient:
+		d.RE2DataClient = nil
+		route = re2.ChannelRoute(id, re2.ChannelData)
+	default:
+		return nil, ""
 	}
-	d.RE2Client = nil
-	d.RE2ClientID = ""
-	d.RE2ClientName = ""
-	return d.RE2Agent
+	if d.RE2Client == nil && d.RE2DataClient == nil {
+		d.RE2ClientID = ""
+		d.RE2ClientName = ""
+	}
+	return d.RE2Agent, route
 }
 
-func (h *Hub) re2ClientOf(id string) *re2.Conn {
+func (h *Hub) re2ClientOf(route string) *re2.Conn {
+	id, channel := re2.SplitRoute(route)
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	d := h.devices[id]
 	if d == nil {
 		return nil
 	}
-	return d.RE2Client
+	return *d.clientSlot(channel)
 }
 
 func notifyPeerGone(peer *re2.Conn, routeID string) {
@@ -170,8 +228,9 @@ func serveRE2Agent(hub *Hub, c *re2.Conn, r *http.Request) {
 	deviceID := ""
 	defer func() {
 		if deviceID != "" {
-			peer := hub.clearRE2Agent(deviceID, c)
-			notifyPeerGone(peer, deviceID)
+			for _, p := range hub.clearRE2Agent(deviceID, c) {
+				notifyPeerGone(p.conn, p.route)
+			}
 		}
 	}()
 
@@ -191,7 +250,7 @@ func serveRE2Agent(hub *Hub, c *re2.Conn, r *http.Request) {
 				_ = writeRE2Err(c, data.DeviceID, "bad_data", "device_id and device_secret required")
 				continue
 			}
-			if err := hub.setRE2Agent(data.DeviceID, data.DeviceSecret, data.Name, c); err != nil {
+			if err := hub.setRE2Agent(data.DeviceID, data.DeviceSecret, data.Name, data.Channels, c); err != nil {
 				_ = writeRE2Err(c, data.DeviceID, "auth_failed", err.Error())
 				return
 			}
@@ -229,6 +288,9 @@ func serveRE2Agent(hub *Hub, c *re2.Conn, r *http.Request) {
 			if route == "" {
 				route = deviceID
 			}
+			if id, _ := re2.SplitRoute(route); id != deviceID {
+				continue
+			}
 			logOpaque(f.Type, route, len(f.Payload))
 			cli := hub.re2ClientOf(route)
 			if cli == nil {
@@ -250,11 +312,12 @@ func serveRE2Agent(hub *Hub, c *re2.Conn, r *http.Request) {
 
 func serveRE2Client(hub *Hub, c *re2.Conn, r *http.Request) {
 	deviceID := ""
+	route := ""
 	acquired := false
 	defer func() {
 		if deviceID != "" {
-			peer := hub.clearRE2Client(deviceID, c)
-			notifyPeerGone(peer, deviceID)
+			agent, r := hub.clearRE2Client(deviceID, c)
+			notifyPeerGone(agent, r)
 		}
 		if acquired && hub.limiter != nil {
 			hub.limiter.Release()
@@ -312,6 +375,21 @@ func serveRE2Client(hub *Hub, c *re2.Conn, r *http.Request) {
 				_ = writeRE2Err(c, data.DeviceID, "offline", "device agent offline")
 				continue
 			}
+			if route != "" && route != re2.ChannelRoute(data.DeviceID, data.Channel) {
+				_ = writeRE2Err(c, data.DeviceID, "bad_data", "connection already bound to another device or channel")
+				continue
+			}
+			switch data.Channel {
+			case "":
+			case re2.ChannelData:
+				if !hub.re2AgentChannels(data.DeviceID) {
+					_ = writeRE2Err(c, data.DeviceID, "channel_unsupported", "agent does not serve a separate data channel")
+					continue
+				}
+			default:
+				_ = writeRE2Err(c, data.DeviceID, "channel_unsupported", "unknown channel "+data.Channel)
+				continue
+			}
 			if !acquired && hub.limiter != nil && !hub.limiter.TryAcquire() {
 				_ = writeRE2Err(c, data.DeviceID, "relay_full",
 					fmt.Sprintf("relay at capacity (%d sessions); try another node", hub.limiter.Max()))
@@ -335,18 +413,20 @@ func serveRE2Client(hub *Hub, c *re2.Conn, r *http.Request) {
 				log.Printf("re2 bind busy device=%s", data.DeviceID)
 				continue
 			}
-			if res.displaced != nil {
-				_ = res.displaced.WriteFrame(re2.Frame{
-					Type:    re2.TypeError,
-					RouteID: data.DeviceID,
-					Payload: re2.MustJSON(re2.ErrorPayload{
-						Code:    "superseded",
-						Message: "another device took over this computer",
-						Peer:    data.ClientName,
-						Since:   time.Now().Unix(),
-					}),
-				})
-				_ = res.displaced.Close()
+			if len(res.displaced) > 0 {
+				for _, old := range res.displaced {
+					_ = old.conn.WriteFrame(re2.Frame{
+						Type:    re2.TypeError,
+						RouteID: old.route,
+						Payload: re2.MustJSON(re2.ErrorPayload{
+							Code:    "superseded",
+							Message: "another device took over this computer",
+							Peer:    data.ClientName,
+							Since:   time.Now().Unix(),
+						}),
+					})
+					_ = old.conn.Close()
+				}
 				if agent := hub.re2AgentOf(data.DeviceID); agent != nil {
 					_ = agent.WriteFrame(re2.Frame{
 						Type:    re2.TypeError,
@@ -362,21 +442,20 @@ func serveRE2Client(hub *Hub, c *re2.Conn, r *http.Request) {
 			}
 			acquired = true
 			deviceID = data.DeviceID
+			route = re2.ChannelRoute(deviceID, data.Channel)
 			_ = c.WriteFrame(re2.Frame{
 				Type:    re2.TypeBindOK,
-				RouteID: deviceID,
-				Payload: re2.MustJSON(re2.BindOKPayload{OK: true, UDP: hub.publicUDP}),
+				RouteID: route,
+				Payload: re2.MustJSON(re2.BindOKPayload{OK: true, UDP: hub.publicUDP, Channel: data.Channel}),
 			})
-			log.Printf("re2 bind ok device=%s active=%d/%d", deviceID, hub.limiter.Active(), hub.limiter.Max())
+			log.Printf("re2 bind ok route=%s active=%d/%d", route, hub.limiter.Active(), hub.limiter.Max())
 
 		case re2.TypeNoise, re2.TypeTunnel:
 			if deviceID == "" {
 				continue
 			}
-			route := f.RouteID
-			if route == "" {
-				route = deviceID
-			}
+			// The bound channel decides the route; a client cannot address
+			// another device or the other channel.
 			logOpaque(f.Type, route, len(f.Payload))
 			agent := hub.re2AgentOf(route)
 			if agent == nil {

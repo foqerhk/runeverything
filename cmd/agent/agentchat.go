@@ -13,7 +13,8 @@ import (
 )
 
 // handleAgentChat is a data-only path: no desktop capture, inject, or PTY.
-func (a *Agent) handleAgentChat(mt byte, body []byte) error {
+// send replies on the channel the request came from.
+func (a *Agent) handleAgentChat(mt byte, body []byte, send func(byte, []byte) error) error {
 	switch mt {
 	case re2.MsgAgentChatList:
 		var p re2.AgentChatListPayload
@@ -24,7 +25,7 @@ func (a *Agent) handleAgentChat(mt byte, body []byte) error {
 		out := re2.AgentChatListPayload{Action: "list"}
 		if err != nil {
 			out.Error = err.Error()
-			return a.sendTunnel(re2.MsgAgentChatList, re2.MustJSON(out), true)
+			return send(re2.MsgAgentChatList, re2.MustJSON(out))
 		}
 		filter := strings.ToLower(strings.TrimSpace(p.Kind))
 		for _, s := range sessions {
@@ -63,7 +64,7 @@ func (a *Agent) handleAgentChat(mt byte, body []byte) error {
 			log.Printf("agent chat: page offset=%d count=%d total=%d", offset, len(trimmed.Sessions), len(all))
 		}
 		audit.Log("agent_chat_list", strconv.Itoa(len(trimmed.Sessions)))
-		return a.sendTunnel(re2.MsgAgentChatList, re2.MustJSON(trimmed), true)
+		return send(re2.MsgAgentChatList, re2.MustJSON(trimmed))
 
 	case re2.MsgAgentChatDetail:
 		var p re2.AgentChatDetailPayload
@@ -71,13 +72,13 @@ func (a *Agent) handleAgentChat(mt byte, body []byte) error {
 			return err
 		}
 		// Hook for future transcript / detail fetch — list-only for now.
-		return a.sendTunnel(re2.MsgAgentChatDetail, re2.MustJSON(re2.AgentChatDetailPayload{
+		return send(re2.MsgAgentChatDetail, re2.MustJSON(re2.AgentChatDetailPayload{
 			Action: "get",
 			Kind:   p.Kind,
 			ID:     p.ID,
 			OK:     false,
 			Error:  "agent_chat_detail_not_implemented",
-		}), true)
+		}))
 	}
 	return nil
 }

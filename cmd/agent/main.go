@@ -399,8 +399,16 @@ type Agent struct {
 	mu       sync.Mutex
 	printQR  bool
 
-	re2Conn          *re2.Conn
-	re2Sess          *re2.Session
+	re2Conn *re2.Conn
+	re2Sess *re2.Session
+	// Data channel (re2.ChannelData): its own Noise session over WSS, independent
+	// of the desktop session's liveness, UDP plane and takeovers by the same phone.
+	dataSess      *re2.Session
+	dataNoise     chan []byte   // handshake in flight: later Noise frames go here
+	dataNoiseDone chan struct{} // closed when that handshake finishes
+	dataSendMu    sync.Mutex
+	// sessionChan records which channel opened each PTY so output goes back on it.
+	sessionChan      map[string]string
 	noiseKP          *re2.StaticKeyPair
 	pairingToken     string
 	pairingExpiresAt int64 // unix seconds; reused across reconnects until expired
@@ -549,6 +557,7 @@ func (a *Agent) closeAll() {
 	for id, s := range a.sessions {
 		_ = s.Close()
 		delete(a.sessions, id)
+		delete(a.sessionChan, id)
 	}
 	if a.udpEP != nil {
 		_ = a.udpEP.Close()
@@ -579,6 +588,11 @@ func mustJSON(v interface{}) []byte {
 }
 
 func (a *Agent) openSession(data re2.OpenSessionPayload) error {
+	return a.openSessionOn(data, "")
+}
+
+// openSessionOn starts a PTY whose output is sent back on channel.
+func (a *Agent) openSessionOn(data re2.OpenSessionPayload, channel string) error {
 	a.mu.Lock()
 	if old, ok := a.sessions[data.SessionID]; ok {
 		_ = old.Close()
@@ -598,6 +612,10 @@ func (a *Agent) openSession(data re2.OpenSessionPayload) error {
 	}
 	a.mu.Lock()
 	a.sessions[data.SessionID] = s
+	if a.sessionChan == nil {
+		a.sessionChan = map[string]string{}
+	}
+	a.sessionChan[data.SessionID] = channel
 	a.noteControlPeerLocked()
 	a.mu.Unlock()
 
@@ -610,6 +628,7 @@ func (a *Agent) closeSession(id, reason string) {
 	s, ok := a.sessions[id]
 	if ok {
 		delete(a.sessions, id)
+		delete(a.sessionChan, id)
 	}
 	a.mu.Unlock()
 	if ok {

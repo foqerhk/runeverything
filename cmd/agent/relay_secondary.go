@@ -206,6 +206,7 @@ func (a *Agent) acceptNoiseOnConn(conn *re2.Conn, relayURL string, first []byte)
 		a.udpHostPort = hp
 	}
 	a.useUDP = false
+	a.lastActivity = time.Now()
 	a.mu.Unlock()
 	i18n.Log("log.re2_noise_ok", a.id.DeviceID+"@alt")
 	_ = a.startUDP(a.udpHostPort)

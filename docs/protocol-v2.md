@@ -25,7 +25,7 @@ QR `v:3` 字段：`relay`、`device_id`、`pairing_token`、`name`、`expires_at
 1. Client / Agent 分别连 `wss://…/re2`
 2. Agent `REGISTER` → `REGISTER_OK{udp}`，再 `PAIR_OFFER{pairing_token, expires_at}`
 3. Client 首次扫码：`PAIR_REDEEM` → `PAIR_ACK{session_ticket}`；之后重连只用 ticket，不再兑换二维码
-4. Client `BIND{device_id, session_ticket, client_id, client_name, force}` → `BIND_OK{udp}`（见下文「控制端独占」）
+4. Client `BIND{device_id, session_ticket, client_id, client_name, force, channel}` → `BIND_OK{udp, channel}`（见下文「控制端独占」「数据通道」）
 5. 同一局域网时 Client 先发 `REHP1|token` 探测 `lan[]`，成功则数据直接发往 Agent（UDP·LAN）；否则两端 UDP `ASSOC` 到中继（Agent 用 device_secret，Client 用 session_ticket）
 6. Client 发起 Noise_XXpsk3，握手消息走 **REUDP DATA 可靠通道**；UDP 失败时改走 WSS 的 NOISE / TUNNEL
 7. 默认 `OPEN_DESKTOP`；AI 会话用 `OPEN_SESSION`（PTY）
@@ -53,24 +53,36 @@ QR `v:3` 字段：`relay`、`device_id`、`pairing_token`、`name`、`expires_at
 | `relay_full` | 中继达到 `max_sessions` | 换节点或稍后再试 |
 | `controller_busy` | 另一台设备正在控制（`peer` = 对方名称，`since` = 开始时间） | 询问用户是否接管，确认后 `force: true` 重新 BIND |
 | `superseded` | 本机被另一台设备强制接管 | 断开并停止自动重连 |
-| `peer_gone` | 对端断开（发给另一端） | Agent 释放会话；Client 走重连 |
-| `controller_changed` | 仅发给 Agent：控制端被强制替换 | Agent 立即释放旧会话（不关 PTY） |
+| `peer_gone` | 对端断开（发给另一端，`route` 标明是哪个通道） | Agent 释放该通道的会话；Client 走重连 |
+| `controller_changed` | 仅发给 Agent：控制端被强制替换 | Agent 释放旧控制端的桌面会话和数据通道 |
+| `channel_unsupported` | Agent 没声明支持数据通道（旧 Agent），或通道名未知 | 退回旧方式（见「数据通道」） |
 
 ## 控制端独占（踢人）
 
-同一台电脑同时只允许一个控制端。BIND 携带：
+同一台电脑同时只允许一台手机控制，按手机算，不按通道算。BIND 携带：
 
 - `client_id`：每次安装固定的随机 ID（KoKo 存在 Keychain）
 - `client_name`：设备名，用于对方的提示文案
 - `force`：用户确认接管时为 `true`
+- `channel`：空 = 桌面通道，`data` = 数据通道
 
 中继规则（`cmd/relay/re2.go` `bindRE2Client`）：
 
-1. 没有在线控制端，或 `client_id` 相同（本机重连、同一 App 的数据隧道），或任一方没带 `client_id`（旧客户端）：直接替换旧连接，行为与旧版一致。
-2. 另一台设备在线且未带 `force`：回 `controller_busy`，不影响对方。
-3. 带 `force`：先给旧控制端发 `superseded` 再关闭，给 Agent 发 `controller_changed`，然后回 `BIND_OK`。
+1. 没有在线控制端，或 `client_id` 相同（本机重连），或任一方没带 `client_id`（旧客户端）：只替换**同一通道**的旧连接；同一台手机的桌面通道和数据通道可以同时在线。
+2. 另一台手机占着任一通道且未带 `force`：回 `controller_busy`，不影响对方。
+3. 带 `force`：给旧控制端的**所有通道**发 `superseded` 再关闭，给 Agent 发 `controller_changed`，然后回 `BIND_OK`。不管新手机连的是画面还是会话，旧手机的画面和会话一起断。
 
 Client 自动重连时遇到 `controller_busy` 必须停止，不得自动 `force`；遇到忙碌也不能改试备用中继绕过。
+
+## 数据通道
+
+AI 会话列表、AI 终端（PTY）、IDE 镜像走单独的数据通道，与远程画面互不影响：画面开着、断开、走 UDP 还是 WSS，都不影响数据通道，反之亦然。
+
+- Agent `REGISTER` 带 `channels: true` 声明支持；Client `BIND{channel: "data"}`，中继回 `BIND_OK{channel: "data"}` 表示已分通道。
+- 数据通道的 NOISE / TUNNEL 帧 `route` 为 `<device_id>#data`，桌面通道仍是 `<device_id>`。中继按 BIND 的通道决定转发路由，Client 不能改写。
+- 数据通道只走 WSS，有自己的 Noise 会话（同一组配对 PSK），不参与桌面的空闲超时和 UDP 切换。Agent 只在该通道上处理 PING、OPEN_SESSION / PTY / RESIZE / SESSION_CLOSE、AGENT_CHAT_*；在数据通道打开的 PTY 输出回数据通道，桌面断开不会关闭它们（AI 进程本身在 screen 里）。
+- 中继每台手机只留一个数据通道连接：同一台手机再 BIND 数据通道会替换上一个，所以 KoKo 每台电脑只维护一条共用的数据隧道（`DesktopSessionHub.dataTunnel`）。
+- 兼容：中继回 `channel_unsupported`（旧 Agent），或 `BIND_OK` 里没有 `channel`（旧中继）时，KoKo 按旧方式走：画面在线时复用桌面隧道，否则用不带 `channel` 的 BIND。
 
 ## 存活检测
 
@@ -154,7 +166,7 @@ PSK 只参与 msg3，因此 Agent 用同一个临时密钥同时尝试多个候�
 
 ## 中继
 
-- wss：原样转发 NOISE / TUNNEL；按「控制端独占」规则处理 BIND
+- wss：原样转发 NOISE / TUNNEL（按通道路由）；按「控制端独占」规则处理 BIND
 - UDP：ASSOC 校验后按 route 转发 DATA/ACK；ASSOC 前限速防放大
 - 配对令牌在过期前可重复兑换，每次兑换都发新的 session_ticket；Agent 发布新令牌会作废该设备的旧令牌
 - session_ticket 只存在中继内存里：**中继重启后已配对手机需要重新扫码**

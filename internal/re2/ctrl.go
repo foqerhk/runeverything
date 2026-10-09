@@ -11,6 +11,8 @@ type RegisterPayload struct {
 	OS           string `json:"os,omitempty"`
 	Arch         string `json:"arch,omitempty"`
 	NoisePub     string `json:"noise_pub,omitempty"`
+	// Channels: the agent serves a separate data channel (see ChannelData).
+	Channels bool `json:"channels,omitempty"`
 }
 
 type RegisterOKPayload struct {
@@ -47,11 +49,16 @@ type BindPayload struct {
 	ClientID   string `json:"client_id,omitempty"`
 	ClientName string `json:"client_name,omitempty"`
 	Force      bool   `json:"force,omitempty"`
+	// Channel selects the client slot: "" for desktop control, ChannelData for
+	// the data channel. One phone may hold both at once.
+	Channel string `json:"channel,omitempty"`
 }
 
 type BindOKPayload struct {
 	OK  bool   `json:"ok"`
 	UDP string `json:"udp,omitempty"` // host:port for REUDP data plane
+	// Channel echoes a bound non-default channel; absent means the relay ignored it.
+	Channel string `json:"channel,omitempty"`
 }
 
 type ErrorPayload struct {
